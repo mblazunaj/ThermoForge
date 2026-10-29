@@ -31,6 +31,8 @@ jobs:
           $version = $project.Project.PropertyGroup.Version
           if ('${{ github.ref_type }}' -eq 'tag' -and '${{ github.ref_name }}' -ne "v$version") { throw 'Tag and project version differ' }
           ./build.ps1 -IsccPath (Join-Path $env:RUNNER_TEMP 'ThermoForge-Inno\ISCC.exe')
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+          Copy-Item ../outputs/ThermoForge-Setup-* artifacts
       - name: Test safety rules
         shell: pwsh
         run: |
@@ -41,16 +43,17 @@ jobs:
         with:
           name: ThermoForge-installer
           path: |
-            ../outputs/ThermoForge-Setup-*.exe
-            ../outputs/ThermoForge-Setup-*.sha256
+            artifacts/ThermoForge-Setup-*.exe
+            artifacts/ThermoForge-Setup-*.sha256
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: |
-          $files = Get-ChildItem ../outputs/ThermoForge-Setup-* | ForEach-Object FullName
+          $files = Get-ChildItem artifacts/ThermoForge-Setup-* | ForEach-Object FullName
           [xml]$project = Get-Content ThermoForge/ThermoForge.csproj
           $tag = "v$($project.Project.PropertyGroup.Version)"
           gh release view $tag *> $null
           if ($LASTEXITCODE -eq 0) { Write-Host "Release $tag already exists"; exit 0 }
           gh release create $tag @files --target '${{ github.sha }}' --title "ThermoForge $tag" --generate-notes
+
