@@ -1,0 +1,40 @@
+ThermoForge — CPU i GPU temperature i stress test
+
+Windows 10 2004 ili noviji / Windows 11, x64.
+
+Instalacija uključuje .NET runtime i službeni potpisani PawnIO 2.2.0 driver.
+Administrator je potreban za instalaciju i pristup većini CPU senzora.
+U aplikaciji odaberi „Aktiviraj CPU senzore” ako temperature nisu dostupne.
+Moguće je da Windows zatraži ponovno pokretanje nakon instalacije drivera.
+
+CPU i GPU test imaju odvojene tipke. Oba mogu raditi istovremeno.
+Zajednički timer: 1, 5, 10, 15 ili 30 minuta; „Ništa” radi do ručnog prekida.
+Timer počinje s prvim testom. Dodavanje drugog testa ne vraća odbrojavanje.
+Esc ili „Zaustavi sve” prekida oba testa. Zatvaranje programa prekida testove.
+
+Zaštita je uvijek uključena. Početni pragovi su CPU 95 °C i GPU 85 °C;
+možeš ih promijeniti prije početka testa. Test se prekida na najvišoj dostupnoj
+temperaturi uređaja, uključujući GPU hotspot i memoriju ako ih senzor izlaže.
+Bez valjanog i svježeg temperaturnog očitanja test tog uređaja je onemogućen.
+Očitavanje senzora svake sekunde nije zamjena za ugrađene zaštite hardvera.
+
+Podrška senzora ovisi o procesoru, grafičkoj kartici, driveru i Windows pravilima.
+Neki AMD i integrirani GPU modeli ne izlažu temperature svih jezgri / GPU-a.
+Prikazuju se stvarni dostupni senzori; nedostajuća očitanja označena su s —.
+„Maksimum” je najviša temperatura od trenutnog pokretanja programa.
+Prikaz opterećenja može odstupati od 100% zbog throttlinga, drugih programa,
+ograničenja napajanja ili odabranog GPU enginea. GPU test traži Direct3D 11.
+Test opterećuje hardver; ne jamči otkrivanje svih pogrešaka izračuna ili VRAM-a.
+
+Nadogradnje: alat provjerava stabilne GitHub Releases objave iz
+https://github.com/mblazunaj/ThermoForge i nudi preuzimanje nove instalacije.
+Instalacija se pokreće nakon potvrde korisnika i provjere SHA-256 datoteke.
+Postavke ostaju u %LOCALAPPDATA%\ThermoForge\settings.json.
+Desni klik u praznom prostoru aplikacije otvara postavku automatske provjere
+nadogradnji, mapu dnevnika i podatke o programu.
+
+Deinstalacija uklanja ThermoForge, a čuva osobne postavke i zajednički PawnIO
+driver koji mogu koristiti drugi alati. PawnIO možeš zasebno ukloniti kroz
+Windows Postavke > Aplikacije ako ga više ne trebaš.
+
+Licencije i izvorni kod ovisnosti navedeni su u THIRD-PARTY-NOTICES.txt.

@@ -1,0 +1,56 @@
+name: Build and release Windows installer
+on:
+  push:
+    branches: ['main']
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Prepare pinned installer compiler
+        shell: pwsh
+        run: |
+          $setup = Join-Path $env:RUNNER_TEMP 'inno-setup.exe'
+          $folder = Join-Path $env:RUNNER_TEMP 'ThermoForge-Inno'
+          Invoke-WebRequest 'https://github.com/jrsoftware/issrc/releases/download/is-7_1_1/innosetup-7.1.1-x64.exe' -OutFile $setup
+          if ((Get-FileHash $setup -Algorithm SHA256).Hash -ne '8A5A6711C3766A6E5FB74F280BA0E3551E719CE94538D901FDBD1F8F9920B3F0') { throw 'Compiler checksum mismatch' }
+          if ((Get-AuthenticodeSignature $setup).Status -ne 'Valid') { throw 'Compiler signature invalid' }
+          $p = Start-Process $setup -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER','/NOICONS','/PORTABLE=1',"/DIR=$folder" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw 'Compiler extraction failed' }
+      - name: Build installer
+        shell: pwsh
+        run: |
+          [xml]$project = Get-Content ThermoForge/ThermoForge.csproj
+          $version = $project.Project.PropertyGroup.Version
+          if ('${{ github.ref_type }}' -eq 'tag' -and '${{ github.ref_name }}' -ne "v$version") { throw 'Tag and project version differ' }
+          ./build.ps1 -IsccPath (Join-Path $env:RUNNER_TEMP 'ThermoForge-Inno\ISCC.exe')
+      - name: Test safety rules
+        shell: pwsh
+        run: |
+          $p = Start-Process ./publish/ThermoForge.exe -ArgumentList '--policy-test','policy-test.txt' -Wait -PassThru
+          Get-Content policy-test.txt
+          if ($p.ExitCode -ne 0) { throw 'Policy tests failed' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ThermoForge-installer
+          path: |
+            ../outputs/ThermoForge-Setup-*.exe
+            ../outputs/ThermoForge-Setup-*.sha256
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem ../outputs/ThermoForge-Setup-* | ForEach-Object FullName
+          [xml]$project = Get-Content ThermoForge/ThermoForge.csproj
+          $tag = "v$($project.Project.PropertyGroup.Version)"
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) { Write-Host "Release $tag already exists"; exit 0 }
+          gh release create $tag @files --target '${{ github.sha }}' --title "ThermoForge $tag" --generate-notes

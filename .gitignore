@@ -1,0 +1,10 @@
+packages/
+publish/
+vendor/*.exe
+tools/
+profile/
+**/bin/
+**/obj/
+*.log
+*.png
+*-test.txt
