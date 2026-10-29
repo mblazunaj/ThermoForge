@@ -1,5 +1,5 @@
 #ifndef MyAppVersion
-  #define MyAppVersion "1.0.0"
+  #define MyAppVersion "1.0.1"
 #endif
 [Setup]
 AppId={{53DE7C77-C9B7-4600-9501-EF29E07652DA}
@@ -20,6 +20,7 @@ OutputBaseFilename=ThermoForge-Setup-{#MyAppVersion}
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
+SetupIconFile=ThermoForge\Assets\ThermoForge.ico
 UninstallDisplayIcon={app}\ThermoForge.exe
 CloseApplications=yes
 RestartApplications=no
@@ -47,7 +48,7 @@ Name: "{autoprograms}\ThermoForge"; Filename: "{app}\ThermoForge.exe"; Comment: 
 Name: "{autodesktop}\ThermoForge"; Filename: "{app}\ThermoForge.exe"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\ThermoForge.exe"; Description: "Pokreni ThermoForge"; Flags: nowait postinstall skipifsilent runasoriginaluser
+Filename: "{app}\ThermoForge.exe"; Description: "Pokreni ThermoForge"; Flags: nowait postinstall skipifsilent runascurrentuser
 
 [Code]
 var

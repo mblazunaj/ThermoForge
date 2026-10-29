@@ -3,7 +3,7 @@ using System.Diagnostics;
 
 namespace ThermoForge;
 
-public sealed class SensorService : IDisposable
+public sealed class SensorService : ISensorSource
 {
     private readonly CancellationTokenSource stop = new();
     private Snapshot current = Snapshot.Empty;

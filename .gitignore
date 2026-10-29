@@ -7,4 +7,5 @@ profile/
 **/obj/
 *.log
 *.png
+!ThermoForge/Assets/*.png
 *-test.txt

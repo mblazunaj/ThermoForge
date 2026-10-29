@@ -7,7 +7,8 @@
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <AssemblyName>ThermoForge</AssemblyName>
-    <Version>1.0.0</Version>
+    <Version>1.0.1</Version>
+    <ApplicationIcon>Assets\ThermoForge.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>true</SelfContained>
@@ -17,6 +18,7 @@
     <RestorePackagesPath>../packages</RestorePackagesPath>
   </PropertyGroup>
   <ItemGroup>
+    <EmbeddedResource Include="Assets\ThermoForge.ico" LogicalName="ThermoForge.AppIcon" />
     <PackageReference Include="LibreHardwareMonitorLib" Version="0.9.6" />
     <PackageReference Include="Vortice.Direct3D11" Version="3.8.3" />
     <PackageReference Include="Vortice.DXGI" Version="3.8.3" />

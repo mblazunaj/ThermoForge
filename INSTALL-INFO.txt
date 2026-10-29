@@ -4,7 +4,9 @@ Windows 10 2004 ili noviji / Windows 11, x64.
 
 Instalacija uključuje .NET runtime i službeni potpisani PawnIO 2.2.0 driver.
 Administrator je potreban za instalaciju i pristup većini CPU senzora.
-U aplikaciji odaberi „Aktiviraj CPU senzore” ako temperature nisu dostupne.
+ThermoForge pri svakom pokretanju odmah traži administratorska prava kroz
+Windows UAC te automatski učitava sve dostupne temperature. Nema dodatnog
+gumba za aktiviranje senzora u aplikaciji.
 Moguće je da Windows zatraži ponovno pokretanje nakon instalacije drivera.
 
 CPU i GPU test imaju odvojene tipke. Oba mogu raditi istovremeno.
@@ -15,7 +17,13 @@ Esc ili „Zaustavi sve” prekida oba testa. Zatvaranje programa prekida testov
 Zaštita je uvijek uključena. Početni pragovi su CPU 95 °C i GPU 85 °C;
 možeš ih promijeniti prije početka testa. Test se prekida na najvišoj dostupnoj
 temperaturi uređaja, uključujući GPU hotspot i memoriju ako ih senzor izlaže.
-Bez valjanog i svježeg temperaturnog očitanja test tog uređaja je onemogućen.
+Integrirani Intel GPU bez vlastitog temperaturnog senzora može se testirati
+uz jasno označen nadzor CPU paketa. GPU temperatura ostaje označena crticom;
+CPU paket se ne prikazuje kao izmjerena GPU temperatura. GPU prag u tom
+načinu vrijedi za CPU paket. To nije izravna temperaturna zaštita GPU-a.
+Nedostupno očitanje paketa ili prelazak praga prekida oba testa.
+Zasebne grafičke kartice bez vlastite temperature ostaju blokirane.
+Bez valjanog i svježeg odabranog izvora za nadzor test je onemogućen.
 Očitavanje senzora svake sekunde nije zamjena za ugrađene zaštite hardvera.
 
 Podrška senzora ovisi o procesoru, grafičkoj kartici, driveru i Windows pravilima.

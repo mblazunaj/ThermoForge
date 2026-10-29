@@ -10,23 +10,59 @@ public record DeviceReading(string Id, string Name, bool IsCpu, Reading[] Sensor
     public float? Hottest => Temperatures.Where(s => s.Value.HasValue).Select(s => s.Value).DefaultIfEmpty().Max();
     public float? Temperature => Temperatures.FirstOrDefault(s => s.Name.Contains(IsCpu ? "Package" : "GPU Core", StringComparison.OrdinalIgnoreCase))?.Value
         ?? Temperatures.FirstOrDefault(s => s.Name.Contains("Tctl", StringComparison.OrdinalIgnoreCase))?.Value ?? Hottest;
-    public float? Load => Sensors.FirstOrDefault(s => s.Kind == "Load" && (s.Name.Contains("Total") || s.Name is "GPU Core" or "D3D 3D"))?.Value;
+    public float? Load => IsCpu ? Sensors.FirstOrDefault(s => s.Kind == "Load" && s.Name.Contains("Total"))?.Value
+        : Sensors.FirstOrDefault(s => s.Kind == "Load" && s.Name == "GPU Core")?.Value
+          ?? Sensors.Where(s => s.Kind == "Load" && (s.Name == "D3D 3D" || s.Name.Contains("Compute", StringComparison.OrdinalIgnoreCase))).Select(s => s.Value).DefaultIfEmpty().Max();
 }
 public record Snapshot(long Timestamp, DeviceReading[] Devices, string? Error)
 {
     public static Snapshot Empty => new(0, [], null);
     public bool Fresh(long now) => Timestamp != 0 && Stopwatch.GetElapsedTime(Timestamp, now) < TimeSpan.FromSeconds(5);
 }
+public interface ISensorSource : IDisposable
+{
+    Snapshot Current { get; }
+}
+public record GpuThermalSource(float Temperature, bool UsesCpuPackage);
+public static class GpuThermals
+{
+    public static float? PackageFor(Snapshot snapshot, string? gpuId)
+    {
+        var gpu = snapshot.Devices.SingleOrDefault(d => d.Id == gpuId);
+        // LibreHardwareMonitor binds this iGPU family to its Intel CPU package.
+        // Never infer integration from VRAM size or use this fallback for a discrete GPU.
+        if (gpu == null || gpu.IsCpu || !gpu.Id.StartsWith("/gpu-intel-integrated/", StringComparison.Ordinal)) return null;
+        var cpus = snapshot.Devices.Where(d => d.IsCpu).ToArray();
+        if (cpus.Length != 1) return null;
+        var package = cpus[0].Temperatures.FirstOrDefault(s => s.Name.Equals("CPU Package", StringComparison.OrdinalIgnoreCase))?.Value;
+        return package is float t && float.IsFinite(t) && t > 0 && t <= 150 ? t : null;
+    }
+    public static GpuThermalSource? Resolve(Snapshot snapshot, string? gpuId)
+    {
+        var gpu = snapshot.Devices.FirstOrDefault(d => d.Id == gpuId && !d.IsCpu);
+        if (gpu?.Hottest is float direct) return new(direct, false);
+        return PackageFor(snapshot, gpuId) is float package ? new(package, true) : null;
+    }
+}
 public static class Protection
 {
-    public static string? Check(Snapshot s, long now, bool cpu, string? gpuId, int cpuLimit, int gpuLimit)
+    public static string? Check(Snapshot s, long now, bool cpu, string? gpuId, int cpuLimit, int gpuLimit, bool useCpuPackageForGpu = false)
     {
         if (!s.Fresh(now)) return "Zaustavljeno: očitanja senzora kasne više od 5 sekundi.";
         if (s.Error != null) return "Zaustavljeno: greška pri čitanju senzora.";
         var cpus = s.Devices.Where(d => d.IsCpu).ToArray();
         var gpu = s.Devices.FirstOrDefault(d => d.Id == gpuId);
         if (cpu && (cpus.Length == 0 || cpus.Any(d => !d.Hottest.HasValue))) return "Zaustavljeno: temperatura CPU-a nije dostupna.";
-        if (gpuId != null && gpu?.Hottest == null) return "Zaustavljeno: temperatura GPU-a nije dostupna.";
+        if (gpuId != null)
+        {
+            if (useCpuPackageForGpu)
+            {
+                var package = GpuThermals.PackageFor(s, gpuId);
+                if (package == null) return "Zaustavljeno: temperatura CPU paketa za nadzor integriranog GPU-a nije dostupna.";
+                if (package >= gpuLimit) return $"Zaustavljeno: CPU paket u nadzoru iGPU-a dosegao je {package:F0} °C (GPU prag {gpuLimit} °C).";
+            }
+            else if (gpu?.Hottest == null) return "Zaustavljeno: temperatura GPU-a nije dostupna.";
+        }
         // Monitor all present sensors, even when only the other device is stressed.
         foreach (var d in s.Devices)
             if (d.Hottest is float t && t >= (d.IsCpu ? cpuLimit : gpuLimit))

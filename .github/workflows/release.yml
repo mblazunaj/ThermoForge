@@ -36,9 +36,10 @@ jobs:
       - name: Test safety rules
         shell: pwsh
         run: |
-          $p = Start-Process ./publish/ThermoForge.exe -ArgumentList '--policy-test','policy-test.txt' -Wait -PassThru
+          dotnet ./ThermoForge/bin/Release/net10.0-windows/win-x64/ThermoForge.dll --policy-test policy-test.txt
+          $testExit = $LASTEXITCODE
           Get-Content policy-test.txt
-          if ($p.ExitCode -ne 0) { throw 'Policy tests failed' }
+          if ($testExit -ne 0) { throw 'Policy tests failed' }
       - uses: actions/upload-artifact@v4
         with:
           name: ThermoForge-installer
@@ -56,4 +57,3 @@ jobs:
           gh release view $tag *> $null
           if ($LASTEXITCODE -eq 0) { Write-Host "Release $tag already exists"; exit 0 }
           gh release create $tag @files --target '${{ github.sha }}' --title "ThermoForge $tag" --generate-notes
-

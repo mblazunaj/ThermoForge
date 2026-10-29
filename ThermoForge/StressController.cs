@@ -5,20 +5,22 @@ namespace ThermoForge;
 public sealed class StressController : IDisposable
 {
     private readonly object gate = new();
-    private readonly SensorService sensors;
+    private readonly ISensorSource sensors;
     private readonly Settings settings;
     private readonly CancellationTokenSource stop = new();
     private Process? cpu, gpu;
     private string? gpuId;
+    private bool gpuUsesCpuPackage;
     private long started;
     private long lastUiPulse = Stopwatch.GetTimestamp();
     public string Message { get; private set; } = "Spremno. Odaberi trajanje i pokreni CPU ili GPU test.";
     public bool CpuRunning { get { lock (gate) return cpu != null; } }
     public bool GpuRunning { get { lock (gate) return gpu != null; } }
+    public bool GpuUsesCpuPackage { get { lock (gate) return gpu != null && gpuUsesCpuPackage; } }
     public bool Running => CpuRunning || GpuRunning;
     public TimeSpan Elapsed { get { lock (gate) return started == 0 ? TimeSpan.Zero : Stopwatch.GetElapsedTime(started); } }
     public void UiPulse() => Interlocked.Exchange(ref lastUiPulse, Stopwatch.GetTimestamp());
-    public StressController(SensorService sensors, Settings settings)
+    public StressController(ISensorSource sensors, Settings settings)
     {
         this.sensors = sensors; this.settings = settings;
         new Thread(Watch) { IsBackground = true, Name = "Independent safety watchdog", Priority = ThreadPriority.AboveNormal }.Start();
@@ -30,12 +32,12 @@ public sealed class StressController : IDisposable
         lock (gate)
         {
             if ((isCpu ? cpu : gpu) != null) return null;
-            var error = Protection.Check(sensors.Current, Stopwatch.GetTimestamp(), isCpu || cpu != null, sensorId ?? gpuId, settings.CpuLimit, settings.GpuLimit);
+            var snapshot = sensors.Current;
+            var usePackage = isCpu ? gpuUsesCpuPackage : GpuThermals.Resolve(snapshot, sensorId)?.UsesCpuPackage == true;
+            var error = Protection.Check(snapshot, Stopwatch.GetTimestamp(), isCpu || cpu != null, sensorId ?? gpuId, settings.CpuLimit, settings.GpuLimit, usePackage);
             if (error != null) return error;
             if (Protection.Expired(started, Stopwatch.GetTimestamp(), settings.Minutes)) { StopAllLocked("Timer je istekao."); return "Timer je istekao. Pokreni novi test."; }
-            var info = new ProcessStartInfo(Environment.ProcessPath!) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true };
-            info.ArgumentList.Add(isCpu ? "--worker-cpu" : "--worker-gpu");
-            if (!isCpu) info.ArgumentList.Add(adapter!.Index.ToString());
+            var info = Program.WorkerStart(isCpu ? "--worker-cpu" : "--worker-gpu", isCpu ? null : adapter!.Index);
             var p = new Process { StartInfo = info };
             try
             {
@@ -45,19 +47,19 @@ public sealed class StressController : IDisposable
                 // Drain stdout continuously; no blocked worker on full pipe.
                 p.OutputDataReceived += (_, e) => { if (e.Data != null) Diagnostics.Log("Worker: " + e.Data); };
                 p.BeginOutputReadLine();
-                if (isCpu) cpu = p; else { gpu = p; gpuId = sensorId; }
+                if (isCpu) cpu = p; else { gpu = p; gpuId = sensorId; gpuUsesCpuPackage = usePackage; }
                 if (started == 0) started = Stopwatch.GetTimestamp();
-                Message = "Test je aktivan. Temperaturna zaštita je uključena.";
-                Diagnostics.Log($"START {(isCpu ? "CPU" : adapter!.Name)}; timer={settings.Minutes}; CPU={settings.CpuLimit}; GPU={settings.GpuLimit}");
+                Message = gpuUsesCpuPackage ? "GPU test je aktivan uz nadzor CPU paketa; GPU temperatura nije dostupna." : "Test je aktivan. Temperaturna zaštita je uključena.";
+                Diagnostics.Log($"START {(isCpu ? "CPU" : adapter!.Name)}; timer={settings.Minutes}; CPU={settings.CpuLimit}; GPU={settings.GpuLimit}; GPU source={(gpuUsesCpuPackage ? "CPU package" : "GPU sensor")}");
                 return null;
             }
             catch (Exception e) { p.Dispose(); return "Test se ne može pokrenuti: " + e.Message; }
         }
     }
     public void StopCpu() { lock (gate) { Kill(ref cpu); ResetIfIdle(); Message = "CPU test je zaustavljen."; } }
-    public void StopGpu() { lock (gate) { Kill(ref gpu); gpuId = null; ResetIfIdle(); Message = "GPU test je zaustavljen."; } }
+    public void StopGpu() { lock (gate) { Kill(ref gpu); gpuId = null; gpuUsesCpuPackage = false; ResetIfIdle(); Message = "GPU test je zaustavljen."; } }
     public void StopAll(string reason = "Oba testa su zaustavljena.") { lock (gate) StopAllLocked(reason); }
-    private void StopAllLocked(string reason) { Kill(ref cpu); Kill(ref gpu); gpuId = null; started = 0; Message = reason; Diagnostics.Log(reason); }
+    private void StopAllLocked(string reason) { Kill(ref cpu); Kill(ref gpu); gpuId = null; gpuUsesCpuPackage = false; started = 0; Message = reason; Diagnostics.Log(reason); }
     private void ResetIfIdle() { if (cpu == null && gpu == null) started = 0; }
     private static void Kill(ref Process? p)
     {
@@ -73,7 +75,7 @@ public sealed class StressController : IDisposable
             {
                 if (cpu == null && gpu == null) continue;
                 var now = Stopwatch.GetTimestamp();
-                var error = Protection.Check(sensors.Current, now, cpu != null, gpuId, settings.CpuLimit, settings.GpuLimit);
+                var error = Protection.Check(sensors.Current, now, cpu != null, gpuId, settings.CpuLimit, settings.GpuLimit, gpuUsesCpuPackage);
                 if (error != null) { StopAllLocked(error); continue; }
                 if (Protection.Expired(started, now, settings.Minutes)) { StopAllLocked("Test je završen: isteklo je odabrano vrijeme."); continue; }
                 if (Stopwatch.GetElapsedTime(Interlocked.Read(ref lastUiPulse), now) > TimeSpan.FromSeconds(5)) { StopAllLocked("Zaustavljeno: sučelje ne odgovara dulje od 5 sekundi."); continue; }

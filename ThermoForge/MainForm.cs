@@ -7,12 +7,13 @@ public sealed class MainForm : Form
 {
     private static readonly Color Ground = Color.FromArgb(23, 23, 25), Surface = Color.FromArgb(19, 18, 23), Raised = Color.FromArgb(33, 32, 35), Ink = Color.FromArgb(242, 242, 243), Muted = Color.FromArgb(160, 161, 167), Line = Color.FromArgb(58, 58, 62), Danger = Color.FromArgb(229, 86, 111);
     private readonly Settings settings = Settings.Load();
-    private readonly SensorService sensors;
+    private readonly ISensorSource sensors;
     private readonly StressController stress;
     private readonly System.Windows.Forms.Timer refresh = new() { Interval = 500 };
     private readonly CancellationTokenSource closing = new();
     private readonly Label cpuTemp = Metric(), cpuLoad = Small(), cpuName = Small(), gpuTemp = Metric(), gpuLoad = Small(), status = Small(), timerValue = Metric(), sensorNote = Small();
-    private readonly Button cpuButton = Button("Pokreni CPU"), gpuButton = Button("Pokreni GPU"), stopButton = Button("Zaustavi sve"), updateButton = Button("Provjeri nadogradnje"), adminButton = Button("Aktiviraj CPU senzore");
+    private readonly Label cpuProtection = Small(), gpuProtection = Small();
+    private readonly Button cpuButton = Button("Pokreni CPU"), gpuButton = Button("Pokreni GPU"), stopButton = Button("Zaustavi sve"), updateButton = Button("Provjeri nadogradnje");
     private readonly ComboBox duration = Combo(), adapterSelect = Combo();
     private readonly NumericUpDown cpuLimit = Limit(40, 110), gpuLimit = Limit(40, 105);
     private readonly DataGridView table = new();
@@ -25,9 +26,11 @@ public sealed class MainForm : Form
     private long tableTimestamp;
     private bool? tableFresh;
     private bool disposed;
-    public MainForm()
+    public MainForm(ISensorSource? sensorSource = null, GpuAdapter[]? availableAdapters = null)
     {
         Text = "ThermoForge · CPU i GPU stress test"; Name = "ThermoForge";
+        using (var iconStream = typeof(MainForm).Assembly.GetManifestResourceStream("ThermoForge.AppIcon")!)
+        using (var appIcon = new Icon(iconStream)) Icon = (Icon)appIcon.Clone();
         ClientSize = new(960, 780); MinimumSize = new(830, 650); StartPosition = FormStartPosition.CenterScreen;
         BackColor = Ground; ForeColor = Ink; Font = new("Segoe UI", 10); AutoScaleMode = AutoScaleMode.None;
         _ = Handle;
@@ -35,8 +38,8 @@ public sealed class MainForm : Form
         BuildUi();
         ScaleLayout(DeviceDpi / 96f);
         DpiChanged += (_, e) => ScaleLayout(e.DeviceDpiNew / (float)e.DeviceDpiOld);
-        sensors = new(); stress = new(sensors, settings);
-        try { adapters = GpuWorkload.Adapters(); } catch (Exception e) { Diagnostics.Log("DXGI: " + e); }
+        sensors = sensorSource ?? new SensorService(); stress = new(sensors, settings);
+        try { adapters = availableAdapters ?? GpuWorkload.Adapters(); } catch (Exception e) { Diagnostics.Log("DXGI: " + e); }
         foreach (var adapter in adapters) adapterSelect.Items.Add(adapter);
         if (adapters.Length > 0) adapterSelect.SelectedIndex = Math.Max(0, Array.FindIndex(adapters, a => a.Name == settings.GpuName));
         duration.Items.AddRange(["Ništa · do ručnog prekida", "1 minuta", "5 minuta", "10 minuta", "15 minuta", "30 minuta"]);
@@ -49,7 +52,6 @@ public sealed class MainForm : Form
         cpuButton.Click += (_, _) => { if (stress.CpuRunning) stress.StopCpu(); else ShowError(stress.StartCpu()); UpdateView(); };
         gpuButton.Click += (_, _) => { if (stress.GpuRunning) stress.StopGpu(); else if (adapterSelect.SelectedItem is GpuAdapter a && selectedGpu != null) ShowError(stress.StartGpu(a, selectedGpu.Id)); UpdateView(); };
         stopButton.Click += (_, _) => { stress.StopAll(); UpdateView(); };
-        adminButton.Click += (_, _) => Elevate();
         updateButton.Click += async (_, _) => { if (availableRelease == null) await CheckUpdates(false); if (availableRelease != null) await InstallUpdate(); };
         refresh.Tick += (_, _) => UpdateView(); refresh.Start();
         Shown += async (_, _) =>
@@ -65,7 +67,7 @@ public sealed class MainForm : Form
     {
         var root = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new(28, 20, 28, 18), ColumnCount = 1, RowCount = 6, BackColor = Ground };
         root.ColumnStyles.Add(new(SizeType.Percent, 100));
-        foreach (var height in new[] { 66, 184, 142 }) root.RowStyles.Add(new(SizeType.Absolute, height));
+        foreach (var height in new[] { 66, 218, 142 }) root.RowStyles.Add(new(SizeType.Absolute, height));
         root.RowStyles.Add(new(SizeType.Percent, 100)); root.RowStyles.Add(new(SizeType.Absolute, 54)); root.RowStyles.Add(new(SizeType.Absolute, 42));
         Controls.Add(root);
         var header = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Margin = Padding.Empty };
@@ -73,12 +75,16 @@ public sealed class MainForm : Form
         var brand = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false };
         brand.Controls.Add(new Label { Text = "ThermoForge", Font = new("Segoe UI Semibold", 22), AutoSize = true, Margin = Padding.Empty });
         brand.Controls.Add(new Label { Text = "Temperature i stress test · v" + UpdateService.Version, ForeColor = Muted, AutoSize = true, Margin = new(2, 0, 0, 0) });
-        header.Controls.Add(brand, 0, 0); header.Controls.Add(adminButton, 1, 0); adminButton.Dock = DockStyle.Top; root.Controls.Add(header, 0, 0);
-        tips.SetToolTip(adminButton, "Ponovno pokretanje uz administratorska prava za pristup PawnIO CPU senzorima. Testovi se prije toga zaustavljaju.");
+        var identity = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Margin = Padding.Empty };
+        identity.ColumnStyles.Add(new(SizeType.Absolute, 58)); identity.ColumnStyles.Add(new(SizeType.Percent, 100));
+        identity.Controls.Add(new PictureBox { Image = Icon!.ToBitmap(), SizeMode = PictureBoxSizeMode.Zoom, Dock = DockStyle.Fill, Margin = new(0, 4, 12, 8) }, 0, 0);
+        identity.Controls.Add(brand, 1, 0); header.Controls.Add(identity, 0, 0);
+        var access = Small(); access.Text = IsAdmin() ? "Administratorski pristup" : "Ograničen pristup senzorima"; access.Anchor = AnchorStyles.Top | AnchorStyles.Right; header.Controls.Add(access, 1, 0); root.Controls.Add(header, 0, 0);
         var devices = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Margin = new(0, 10, 0, 14) };
         devices.ColumnStyles.Add(new(SizeType.Percent, 50)); devices.ColumnStyles.Add(new(SizeType.Percent, 50));
-        devices.Controls.Add(DevicePanel("CPU", cpuName, cpuTemp, cpuLoad, cpuButton, null), 0, 0);
-        devices.Controls.Add(DevicePanel("GPU", null, gpuTemp, gpuLoad, gpuButton, adapterSelect), 1, 0); root.Controls.Add(devices, 0, 1);
+        cpuProtection.Text = "Zaštita: najtoplija jezgra ili CPU paket";
+        devices.Controls.Add(DevicePanel("CPU", cpuName, cpuTemp, cpuLoad, cpuButton, null, cpuProtection), 0, 0);
+        devices.Controls.Add(DevicePanel("GPU", null, gpuTemp, gpuLoad, gpuButton, adapterSelect, gpuProtection), 1, 0); root.Controls.Add(devices, 0, 1);
         var controls = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, BackColor = Surface, Padding = new(18, 10, 18, 10), Margin = new(0, 0, 0, 14) };
         controls.ColumnStyles.Add(new(SizeType.Percent, 40)); controls.ColumnStyles.Add(new(SizeType.Percent, 31)); controls.ColumnStyles.Add(new(SizeType.Percent, 29));
         var timerPanel = Stack(); timerPanel.Controls.Add(Title("Zajednički timer")); duration.Width = 245; timerPanel.Controls.Add(duration); timerPanel.Controls.Add(timerValue); controls.Controls.Add(timerPanel, 0, 0);
@@ -87,7 +93,7 @@ public sealed class MainForm : Form
         var gpuRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new(0, 5, 0, 0) }; gpuRow.Controls.Add(new Label { Text = "GPU", Width = 45, Padding = new(0, 5, 0, 0) }); gpuRow.Controls.Add(gpuLimit); gpuRow.Controls.Add(new Label { Text = "°C", AutoSize = true, Padding = new(0, 5, 0, 0) }); limits.Controls.Add(gpuRow); controls.Controls.Add(limits, 1, 0);
         var emergency = Stack(); stopButton.Width = 185; stopButton.Height = 40; emergency.Controls.Add(stopButton); var keyHint = Small(); keyHint.Text = "Esc · zaustavi oba testa"; keyHint.Margin = new(2, 8, 0, 0); emergency.Controls.Add(keyHint); controls.Controls.Add(emergency, 2, 0); root.Controls.Add(controls, 0, 2);
         tips.SetToolTip(timerValue, "Odbrojavanje počinje s prvim testom. Uključivanje drugog testa ne vraća timer na početak. Istek zaustavlja oba testa.");
-        tips.SetToolTip(cpuLimit, "Zaštita koristi najvišu dostupnu CPU temperaturu, uključujući jezgre i paket."); tips.SetToolTip(gpuLimit, "Zaštita koristi najvišu GPU temperaturu, uključujući hotspot i memoriju ako postoje.");
+        tips.SetToolTip(cpuLimit, "Zaštita koristi najvišu dostupnu CPU temperaturu, uključujući jezgre i paket."); tips.SetToolTip(gpuLimit, "Prag GPU senzora. Za integrirani Intel GPU bez vlastite temperature ovaj prag vrijedi za CPU paket korišten u nadzoru.");
         var data = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = Padding.Empty };
         data.ColumnStyles.Add(new(SizeType.Percent, 100));
         data.RowStyles.Add(new(SizeType.Absolute, 31)); data.RowStyles.Add(new(SizeType.Percent, 100)); data.Controls.Add(Title("Senzori · CPU, jezgre i grafičke kartice"), 0, 0);
@@ -103,7 +109,7 @@ public sealed class MainForm : Form
         var footer = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Margin = Padding.Empty }; footer.ColumnStyles.Add(new(SizeType.Percent, 100)); footer.ColumnStyles.Add(new(SizeType.Absolute, 220)); status.Dock = DockStyle.Fill; status.AutoSize = false; status.TextAlign = ContentAlignment.MiddleLeft; footer.Controls.Add(status, 0, 0); footer.Controls.Add(updateButton, 1, 0); root.Controls.Add(footer, 0, 5);
         tips.SetToolTip(updateButton, "Provjera novih službenih objava na GitHubu. Nadogradnja se preuzima i instalira tek nakon tvoje potvrde.");
         var menu = new ContextMenuStrip(); menu.Items.Add("Mapa dnevnika i postavki", null, (_, _) => { Directory.CreateDirectory(Settings.Folder); Process.Start(new ProcessStartInfo(Settings.Folder) { UseShellExecute = true }); });
-        var auto = new ToolStripMenuItem("Automatska provjera nadogradnji") { Checked = settings.CheckUpdates, CheckOnClick = true }; auto.CheckedChanged += (_, _) => { settings.CheckUpdates = auto.Checked; settings.Save(); }; menu.Items.Add(auto); menu.Items.Add("O programu i licencije", null, (_, _) => MessageBox.Show("ThermoForge 1.0.0\nCPU SIMD + Direct3D 11 GPU compute\n\nZaštita: najviša dostupna temperatura. Bez senzora nema testa. Prag GPU-a vrijedi i za hotspot/memoriju.\n\nNeki procesori ne daju temperature pojedinih jezgri. Visoko opterećenje ovisi o hardveru, hlađenju i ograničenjima sustava.\n\nLicencije i izvori: THIRD-PARTY-NOTICES.txt uz program.\nGitHub: github.com/mblazunaj/ThermoForge", "O programu", MessageBoxButtons.OK, MessageBoxIcon.Information)); ContextMenuStrip = menu;
+        var auto = new ToolStripMenuItem("Automatska provjera nadogradnji") { Checked = settings.CheckUpdates, CheckOnClick = true }; auto.CheckedChanged += (_, _) => { settings.CheckUpdates = auto.Checked; settings.Save(); }; menu.Items.Add(auto); menu.Items.Add("O programu i licencije", null, (_, _) => MessageBox.Show($"ThermoForge {UpdateService.Version}\nCPU SIMD + Direct3D 11 GPU compute\n\nZaštita: najviša dostupna temperatura. Integrirani Intel GPU bez vlastitog senzora koristi jasno označen nadzor CPU paketa uz GPU prag. To nije izravno mjerenje ni izravna temperaturna zaštita GPU-a. Bez dostupnog izvora za nadzor nema testa.\n\nNeki procesori ne daju temperature pojedinih jezgri. Visoko opterećenje ovisi o hardveru, hlađenju i ograničenjima sustava.\n\nLicencije i izvori: THIRD-PARTY-NOTICES.txt uz program.\nGitHub: github.com/mblazunaj/ThermoForge", "O programu", MessageBoxButtons.OK, MessageBoxIcon.Information)); ContextMenuStrip = menu;
     }
     private static FlowLayoutPanel Stack() => new() { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, Margin = Padding.Empty };
     private static Label Title(string text) => new() { Text = text, AutoSize = true, Font = new("Segoe UI Semibold", 11), Margin = new(0, 0, 0, 5) };
@@ -112,18 +118,21 @@ public sealed class MainForm : Form
     private static Button Button(string text) => new ActionButton { Text = text, Height = 35, Width = 210, FlatStyle = FlatStyle.Flat, BackColor = Raised, ForeColor = Ink, Cursor = Cursors.Hand, Margin = new(0, 0, 0, 0), UseVisualStyleBackColor = false, FlatAppearance = { BorderColor = Line, BorderSize = 1 } };
     private static ComboBox Combo() => new() { DropDownStyle = ComboBoxStyle.DropDownList, FlatStyle = FlatStyle.Flat, BackColor = Raised, ForeColor = Ink, Width = 300, IntegralHeight = true, Margin = new(0, 2, 0, 0) };
     private static NumericUpDown Limit(int min, int max) => new() { Minimum = min, Maximum = max, Width = 65, BackColor = Raised, ForeColor = Ink, BorderStyle = BorderStyle.FixedSingle };
-    private static Control DevicePanel(string title, Label? name, Label temp, Label load, Button button, ComboBox? combo)
+    private static Control DevicePanel(string title, Label? name, Label temp, Label load, Button button, ComboBox? combo, Label details)
     {
-        var p = new TableLayoutPanel { Dock = DockStyle.Fill, BackColor = Surface, ColumnCount = 2, RowCount = 4, Padding = new(18, 10, 18, 10), Margin = title == "CPU" ? new(0, 0, 8, 0) : new(8, 0, 0, 0) };
+        var p = new TableLayoutPanel { Dock = DockStyle.Fill, BackColor = Surface, ColumnCount = 2, RowCount = 5, Padding = new(18, 10, 18, 10), Margin = title == "CPU" ? new(0, 0, 8, 0) : new(8, 0, 0, 0) };
         p.ColumnStyles.Add(new(SizeType.Percent, 100)); p.ColumnStyles.Add(new(SizeType.Absolute, 166));
-        p.RowStyles.Add(new(SizeType.Absolute, 23)); p.RowStyles.Add(new(SizeType.Absolute, 31)); p.RowStyles.Add(new(SizeType.Percent, 100)); p.RowStyles.Add(new(SizeType.Absolute, 35));
+        p.RowStyles.Add(new(SizeType.Absolute, 23)); p.RowStyles.Add(new(SizeType.Absolute, 31)); p.RowStyles.Add(new(SizeType.Percent, 100)); p.RowStyles.Add(new(SizeType.Absolute, 43)); p.RowStyles.Add(new(SizeType.Absolute, 35));
         p.Controls.Add(Title(title), 0, 0); p.SetColumnSpan(p.GetControlFromPosition(0, 0)!, 2);
         if (combo != null) { combo.Dock = DockStyle.Fill; p.Controls.Add(combo, 0, 1); p.SetColumnSpan(combo, 2); }
         else if (name != null) { name.AutoSize = false; name.Dock = DockStyle.Fill; name.AutoEllipsis = true; p.Controls.Add(name, 0, 1); p.SetColumnSpan(name, 2); }
         p.Controls.Add(temp, 0, 2); load.Anchor = AnchorStyles.Left | AnchorStyles.Bottom; p.Controls.Add(load, 1, 2);
-        button.Dock = DockStyle.Fill; p.Controls.Add(button, 0, 3); p.SetColumnSpan(button, 2); return p;
+        details.Dock = DockStyle.Fill; details.AutoSize = false; p.Controls.Add(details, 0, 3); p.SetColumnSpan(details, 2);
+        button.Dock = DockStyle.Fill; p.Controls.Add(button, 0, 4); p.SetColumnSpan(button, 2); return p;
     }
     private static string Temperature(float? v) => v is float n ? $"{n:F1} °C" : "—";
+    internal (bool Enabled, string Action, string Reading, string Monitor) GpuUiState()
+    { UpdateView(); return (gpuButton.Enabled, gpuButton.Text, gpuTemp.Text, gpuProtection.Text); }
     private void UpdateView()
     {
         if (disposed) return;
@@ -135,19 +144,25 @@ public sealed class MainForm : Form
         var cpus = snapshot.Devices.Where(d => d.IsCpu).ToArray();
         var cpu = cpus.FirstOrDefault();
         selectedGpu = MatchGpu(snapshot, adapterSelect.SelectedItem as GpuAdapter);
+        var gpuSource = fresh ? GpuThermals.Resolve(snapshot, selectedGpu?.Id) : null;
+        bool packageMode = stress.GpuRunning ? stress.GpuUsesCpuPackage : gpuSource?.UsesCpuPackage == true;
+        var packageTemp = selectedGpu == null ? null : GpuThermals.PackageFor(snapshot, selectedGpu.Id);
         cpuName.Text = cpu?.Name ?? "Otkrivanje CPU-a…";
         cpuTemp.Text = Temperature(fresh ? cpus.Select(c => c.Temperature).DefaultIfEmpty().Max() : null); gpuTemp.Text = Temperature(fresh ? selectedGpu?.Temperature : null);
         cpuLoad.Text = "Opterećenje " + (fresh && cpu?.Load is float cl ? $"{cl:F0}%" : "—"); gpuLoad.Text = "Opterećenje " + (fresh && selectedGpu?.Load is float gl ? $"{gl:F0}%" : "—");
-        cpuButton.Text = stress.CpuRunning ? "Zaustavi CPU" : "Pokreni CPU"; gpuButton.Text = stress.GpuRunning ? "Zaustavi GPU" : "Pokreni GPU";
-        cpuButton.Enabled = stress.CpuRunning || (fresh && cpus.Length > 0 && cpus.All(c => c.Hottest.HasValue)); gpuButton.Enabled = stress.GpuRunning || (fresh && selectedGpu?.Hottest != null && adapterSelect.SelectedItem != null);
+        cpuButton.Text = stress.CpuRunning ? "Zaustavi CPU" : "Pokreni CPU"; gpuButton.Text = stress.GpuRunning ? "Zaustavi GPU" : packageMode ? "Pokreni GPU · nadzor CPU paketa" : "Pokreni GPU";
+        cpuButton.Enabled = stress.CpuRunning || (fresh && cpus.Length > 0 && cpus.All(c => c.Hottest.HasValue)); gpuButton.Enabled = stress.GpuRunning || (gpuSource != null && adapterSelect.SelectedItem != null);
+        gpuProtection.Text = !fresh ? "Učitavanje temperaturnih senzora…" : packageMode ? $"GPU temperatura nije dostupna.\nNadzor: CPU paket {Temperature(packageTemp)} · prag {settings.GpuLimit} °C" : selectedGpu?.Hottest != null ? "Zaštita: najviša GPU temperatura, uključujući hotspot" : "GPU temperatura nije dostupna.\nTest čeka valjan izvor za temperaturni nadzor.";
+        tips.SetToolTip(gpuButton, packageMode ? "Integrirani GPU nema vlastito očitanje. Test prati CPU paket uz GPU prag; to nije izravna temperaturna zaštita GPU-a." : selectedGpu == null ? "GPU nije jednoznačno povezan sa senzorima." : gpuSource == null ? "Nema GPU temperature ni dostupnog CPU paketa za nadzor integriranog Intel GPU-a." : "Pokreni ili zaustavi test odabranog GPU-a.");
         cpuButton.FlatAppearance.BorderColor = stress.CpuRunning ? Danger : Line; gpuButton.FlatAppearance.BorderColor = stress.GpuRunning ? Danger : Line;
         stopButton.Enabled = stress.Running; duration.Enabled = cpuLimit.Enabled = gpuLimit.Enabled = adapterSelect.Enabled = !stress.Running;
         timerValue.Text = stress.Running ? (settings.Minutes == 0 ? "∞ · " + FormatTime(stress.Elapsed) : FormatTime(TimeSpan.FromMinutes(settings.Minutes) - stress.Elapsed)) : settings.Minutes == 0 ? "Neograničeno" : $"{settings.Minutes:00}:00";
         status.Text = stress.Message; status.ForeColor = stress.Message.StartsWith("Zaustavljeno:") || stress.Message.StartsWith("Test je prekinut") ? Danger : Muted;
-        bool admin = IsAdmin(); adminButton.Visible = !admin; adminButton.Enabled = !stress.Running;
+        bool admin = IsAdmin();
         if (snapshot.Timestamp == 0) sensorNote.Text = "Učitavanje senzora…";
         else if (!fresh) sensorNote.Text = snapshot.Error == null ? "Očitanja nisu svježa. Testovi su onemogućeni." : "Senzori: " + snapshot.Error;
-        else if (cpu?.Hottest == null) sensorNote.Text = admin ? "CPU temperatura nije dostupna. Provjeri PawnIO driver i podršku procesora. CPU test je onemogućen." : "Za CPU temperature odaberi „Aktiviraj CPU senzore”. Potreban je PawnIO driver iz instalacije.";
+        else if (cpu?.Hottest == null) sensorNote.Text = admin ? "CPU temperatura nije dostupna. Provjeri PawnIO driver i podršku procesora. CPU test je onemogućen." : "Za CPU senzore potreban je administratorski pristup. Instalirana aplikacija traži ga odmah pri pokretanju.";
+        else if (packageMode) sensorNote.Text = "Integrirani GPU: nadzor CPU paketa, bez izravne GPU temperaturne zaštite. GPU prag vrijedi za CPU paket.";
         else if (!cpus.Any(c => c.Temperatures.Any(t => t.Name.Contains("Core #") || t.Name.Contains("Core ", StringComparison.OrdinalIgnoreCase)))) sensorNote.Text = "Ovaj CPU ne izlaže temperature pojedinih jezgri. Prikazani su svi dostupni CPU senzori.";
         else sensorNote.Text = "Osvježavanje svake sekunde · Zaštita koristi najvišu temperaturu, uključujući GPU hotspot i memoriju.";
         if (snapshot.Timestamp != tableTimestamp || tableFresh != fresh)
@@ -169,13 +184,15 @@ public sealed class MainForm : Form
         return matches.Length == 1 ? matches[0] : null;
     }
     private static string FormatTime(TimeSpan time) { if (time < TimeSpan.Zero) time = TimeSpan.Zero; return time.TotalHours >= 1 ? $"{(int)time.TotalHours:00}:{time.Minutes:00}:{time.Seconds:00}" : $"{(int)time.TotalMinutes:00}:{time.Seconds:00}"; }
-    internal void RenderForVerification(string path, int width, int height)
+    internal void RenderForVerification(string path, int width, int height, string? caption = null)
     {
+        settings.CheckUpdates = false;
         ShowInTaskbar = false; Opacity = 0; StartPosition = FormStartPosition.Manual; Location = new(-20000, -20000);
         Show(); ClientSize = new(width * DeviceDpi / 96, height * DeviceDpi / 96); Application.DoEvents();
         var wait = Stopwatch.StartNew();
         while (sensors.Current.Timestamp == 0 && wait.Elapsed < TimeSpan.FromSeconds(15)) Thread.Sleep(100);
         UpdateView(); PerformLayout();
+        if (caption != null) { Text += " · " + caption; sensorNote.Text = caption + " · " + sensorNote.Text; }
         using var bitmap = new Bitmap(Width, Height); DrawToBitmap(bitmap, new Rectangle(0, 0, Width, Height)); bitmap.Save(path);
         File.WriteAllText(path + ".layout.json", System.Text.Json.JsonSerializer.Serialize(new { DeviceDpi, Width, Height, GridWidth = table.ClientSize.Width, Columns = table.Columns.Cast<DataGridViewColumn>().Select(c => new { c.Name, c.Width }).ToArray() }));
     }
@@ -219,11 +236,6 @@ public sealed class MainForm : Form
     }
     private static bool IsAdmin() { using var id = WindowsIdentity.GetCurrent(); return new WindowsPrincipal(id).IsInRole(WindowsBuiltInRole.Administrator); }
     private void ShowError(string? error) { if (error != null) MessageBox.Show(this, error, "Test nije pokrenut", MessageBoxButtons.OK, MessageBoxIcon.Information); }
-    private void Elevate()
-    {
-        try { settings.Save(); stress.StopAll(); Process.Start(new ProcessStartInfo(Environment.ProcessPath!) { UseShellExecute = true, Verb = "runas", Arguments = "--wait-for " + Environment.ProcessId }); Close(); }
-        catch (Exception e) { ShowError("Administratorsko pokretanje nije dovršeno: " + e.Message); }
-    }
     private async Task CheckUpdates(bool quiet)
     {
         if (updateBusy) return; updateBusy = true; updateButton.Enabled = false; updateButton.Text = "Provjera…";
