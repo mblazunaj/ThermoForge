@@ -11,7 +11,9 @@ public sealed class StressController : IDisposable
     private Process? cpu, gpu;
     private string? gpuId;
     private bool gpuUsesCpuPackage;
-    private long started;
+    private long started, gpuStarted, lastStarted, lastStopped;
+    private TestRun? run;
+    private TestResult? lastResult;
     private long lastUiPulse = Stopwatch.GetTimestamp();
     public string Message { get; private set; } = "Spremno. Odaberi trajanje i pokreni CPU ili GPU test.";
     public bool CpuRunning { get { lock (gate) return cpu != null; } }
@@ -20,6 +22,7 @@ public sealed class StressController : IDisposable
     public bool Running => CpuRunning || GpuRunning;
     public TimeSpan Elapsed { get { lock (gate) return started == 0 ? TimeSpan.Zero : Stopwatch.GetElapsedTime(started); } }
     public void UiPulse() => Interlocked.Exchange(ref lastUiPulse, Stopwatch.GetTimestamp());
+    internal TestTimeline Timeline { get { lock (gate) return new(started, lastStarted, lastStopped, lastResult); } }
     public StressController(ISensorSource sensors, Settings settings)
     {
         this.sensors = sensors; this.settings = settings;
@@ -47,8 +50,15 @@ public sealed class StressController : IDisposable
                 // Drain stdout continuously; no blocked worker on full pipe.
                 p.OutputDataReceived += (_, e) => { if (e.Data != null) Diagnostics.Log("Worker: " + e.Data); };
                 p.BeginOutputReadLine();
-                if (isCpu) cpu = p; else { gpu = p; gpuId = sensorId; gpuUsesCpuPackage = usePackage; }
-                if (started == 0) started = Stopwatch.GetTimestamp();
+                long now = Stopwatch.GetTimestamp();
+                if (started == 0) { started = now; run = new(now); }
+                if (isCpu) { cpu = p; run!.CpuTested = true; }
+                else
+                {
+                    gpu = p; gpuId = sensorId; gpuUsesCpuPackage = usePackage; gpuStarted = now;
+                    run!.GpuName = adapter!.Name;
+                    run.PackageMonitored |= usePackage;
+                }
                 Message = gpuUsesCpuPackage ? "GPU test je aktivan uz nadzor CPU paketa; GPU temperatura nije dostupna." : "Test je aktivan. Temperaturna zaštita je uključena.";
                 Diagnostics.Log($"START {(isCpu ? "CPU" : adapter!.Name)}; timer={settings.Minutes}; CPU={settings.CpuLimit}; GPU={settings.GpuLimit}; GPU source={(gpuUsesCpuPackage ? "CPU package" : "GPU sensor")}");
                 return null;
@@ -56,11 +66,51 @@ public sealed class StressController : IDisposable
             catch (Exception e) { p.Dispose(); return "Test se ne može pokrenuti: " + e.Message; }
         }
     }
-    public void StopCpu() { lock (gate) { Kill(ref cpu); ResetIfIdle(); Message = "CPU test je zaustavljen."; } }
-    public void StopGpu() { lock (gate) { Kill(ref gpu); gpuId = null; gpuUsesCpuPackage = false; ResetIfIdle(); Message = "GPU test je zaustavljen."; } }
-    public void StopAll(string reason = "Oba testa su zaustavljena.") { lock (gate) StopAllLocked(reason); }
-    private void StopAllLocked(string reason) { Kill(ref cpu); Kill(ref gpu); gpuId = null; gpuUsesCpuPackage = false; started = 0; Message = reason; Diagnostics.Log(reason); }
-    private void ResetIfIdle() { if (cpu == null && gpu == null) started = 0; }
+    public void StopCpu() { lock (gate) { Kill(ref cpu); FinishIfIdle("CPU test je ručno zaustavljen."); Message = "CPU test je zaustavljen."; } }
+    public void StopGpu()
+    {
+        lock (gate)
+        {
+            var snapshot = sensors.Current;
+            long now = Stopwatch.GetTimestamp();
+            Kill(ref gpu);
+            Observe(snapshot, now);
+            gpuId = null; gpuUsesCpuPackage = false;
+            FinishIfIdle("GPU test je ručno zaustavljen.");
+            Message = "GPU test je zaustavljen.";
+        }
+    }
+    public void StopAll(string reason = "Test je ručno zaustavljen.") { lock (gate) StopAllLocked(reason); }
+    private void StopAllLocked(string reason, Snapshot? snapshot = null, long? timestamp = null)
+    {
+        if (run != null) snapshot ??= sensors.Current;
+        long now = timestamp ?? Stopwatch.GetTimestamp();
+        Kill(ref cpu); Kill(ref gpu);
+        if (run != null)
+        {
+            Observe(snapshot!, now);
+            Finish(now, reason);
+        }
+        gpuId = null; gpuUsesCpuPackage = false;
+        Message = reason; Diagnostics.Log(reason);
+    }
+    private void FinishIfIdle(string reason)
+    {
+        if (run == null || cpu != null || gpu != null) return;
+        var snapshot = sensors.Current;
+        long now = Stopwatch.GetTimestamp();
+        Observe(snapshot, now);
+        Finish(now, reason);
+    }
+    private void Finish(long now, string reason)
+    {
+        lastStarted = started;
+        lastStopped = now;
+        lastResult = run!.Finish(now, reason);
+        run = null;
+        started = 0;
+    }
+    private void Observe(Snapshot snapshot, long now) => run?.Observe(snapshot, now, gpuId, gpuStarted, gpuUsesCpuPackage);
     private static void Kill(ref Process? p)
     {
         if (p == null) return;
@@ -74,11 +124,13 @@ public sealed class StressController : IDisposable
             lock (gate)
             {
                 if (cpu == null && gpu == null) continue;
+                var snapshot = sensors.Current;
                 var now = Stopwatch.GetTimestamp();
-                var error = Protection.Check(sensors.Current, now, cpu != null, gpuId, settings.CpuLimit, settings.GpuLimit, gpuUsesCpuPackage);
-                if (error != null) { StopAllLocked(error); continue; }
-                if (Protection.Expired(started, now, settings.Minutes)) { StopAllLocked("Test je završen: isteklo je odabrano vrijeme."); continue; }
-                if (Stopwatch.GetElapsedTime(Interlocked.Read(ref lastUiPulse), now) > TimeSpan.FromSeconds(5)) { StopAllLocked("Zaustavljeno: sučelje ne odgovara dulje od 5 sekundi."); continue; }
+                var error = Protection.Check(snapshot, now, cpu != null, gpuId, settings.CpuLimit, settings.GpuLimit, gpuUsesCpuPackage);
+                if (error != null) { StopAllLocked(error, snapshot, now); continue; }
+                if (Protection.Expired(started, now, settings.Minutes)) { StopAllLocked("Test je završen: isteklo je odabrano vrijeme.", snapshot, now); continue; }
+                if (Stopwatch.GetElapsedTime(Interlocked.Read(ref lastUiPulse), now) > TimeSpan.FromSeconds(5)) { StopAllLocked("Zaustavljeno: sučelje ne odgovara dulje od 5 sekundi.", snapshot, now); continue; }
+                Observe(snapshot, now);
                 foreach (var p in new[] { cpu, gpu }.Where(p => p != null))
                 {
                     try

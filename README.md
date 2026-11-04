@@ -16,6 +16,8 @@ Pokreni instalacijski EXE. Uključuje aplikaciju, .NET runtime i službeni potpi
 - Integrirani Intel GPU bez zasebne temperature može raditi uz **nadzor CPU paketa**. Tipka i poruka jasno navode taj način; GPU temperatura ostaje označena crticom. GPU temperaturni prag u tom načinu primjenjuje se na CPU paket. To nije izravna temperaturna zaštita GPU-a. Ako CPU paket nestane ili prijeđe prag, oba testa staju. Zasebne grafičke kartice ne koriste ovu zamjenu.
 - CPU radi vektorske izračune na svim logičkim procesorima, uključujući sustave s više procesorskih grupa. GPU koristi Direct3D 11 compute shader, bez ograničavanja na brzinu osvježavanja ekrana.
 - Kartica **Specifikacije** prikazuje pregled i detalje za Windows, procesor, RAM, matičnu ploču i BIOS, grafiku i zaslone, pohranu, mrežu i zvuk. **Osvježi podatke** ponovno očitava konfiguraciju. Specifikacije se čitaju lokalno i ne šalju se na mrežu. Dostupnost pojedinih polja ovisi o Windowsu, firmwareu i driverima.
+- Kartica **Graf i sažetak** prikazuje temperaturu i opterećenje u zadnjih do 10 minuta, trenutačne temperaturne pragove te početak i kraj testa. Hlađenje nakon testa vidi se u nastavku grafa. Isprekidana linija **CPU paket · iGPU** prikazuje temperaturu CPU paketa tijekom tog načina nadzora.
+- Sažetak obuhvaća vrijeme od pokretanja prvog opterećenja do završetka zadnjeg, razlog završetka i najveća dostupna očitanja tijekom testa. Najtoplija jezgra prikazuje se kad postoji pojedinačni senzor. Dva zadnja sažetka čuvaju se lokalno u `test-results.json`. Graf uživo čuva mjerenja tijekom rada aplikacije.
 
 Desni klik u praznom dijelu prozora: automatska provjera nadogradnji, mapa postavki/dnevnika i informacije o programu.
 

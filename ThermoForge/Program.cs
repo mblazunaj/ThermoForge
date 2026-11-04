@@ -96,6 +96,16 @@ public static class SelfTest
             Check(Protection.Check(Sample(50, 85), now, false, "gpu", 95, 85) != null, "GPU threshold inclusive");
             var hotCore = new Snapshot(now, [new("cpu", "CPU", true, [new("pkg", "CPU Package", "Temperature", 80, 80), new("core", "P-Core #1", "Temperature", 96, 96)])], null);
             Check(Protection.Check(hotCore, now, true, null, 95, 85) != null, "hot core overrides cooler CPU package");
+            long second = Stopwatch.Frequency;
+            var reportRun = new TestRun(now) { CpuTested = true, GpuName = "Test GPU" };
+            reportRun.Observe(Sample(130, 130) with { Timestamp = now - second }, now, "gpu", now, false);
+            reportRun.Observe(Sample(78, 82) with { Timestamp = now + second }, now + second, "gpu", now + 2 * second, false);
+            reportRun.Observe(Sample(95, 55) with { Timestamp = now + 2 * second }, now + 2 * second, "gpu", now + 2 * second, false);
+            reportRun.Observe(Sample(120, 120) with { Timestamp = now + 3 * second, Error = "test" }, now + 3 * second, "gpu", now, false);
+            var report = reportRun.Finish(now + 3 * second, "Zaustavljeno: dosegnut prag.");
+            Check(report.Duration == TimeSpan.FromSeconds(3) && report.Reason.StartsWith("Zaustavljeno"), "test duration and exact finish reason are recorded");
+            Check(report.CpuPeak?.Celsius == 95 && report.CorePeak?.Celsius == 95 && report.GpuPeak?.Celsius == 55,
+                "report skips pre-test, pre-GPU and invalid observations and includes the limit sample");
             Check(Protection.Check(Sample(null), now, true, null, 95, 85) != null, "missing CPU blocks start");
             Check(Protection.Check(Sample(50, null), now, false, "gpu", 95, 85) != null, "missing GPU blocks start");
             Check(Protection.Check(Sample(), now + Stopwatch.Frequency * 6, true, null, 95, 85) != null, "stale sensors fail closed");
@@ -117,6 +127,13 @@ public static class SelfTest
             Check(MainForm.MatchGpu(ambiguous, new(0, "Same GPU", 0)) == null, "ambiguous GPU sensor rejected");
             const string intelId = "/gpu-intel-integrated/test";
             Snapshot Intel(float? package = 50, float? ownGpu = null) => new(now, [new("cpu", "Intel CPU", true, [new("pkg", "CPU Package", "Temperature", package, package), new("core", "Core Max", "Temperature", 60, 60)]), new(intelId, "Intel integrated GPU", false, [new("gpu", "GPU Core", "Temperature", ownGpu, ownGpu)])], null);
+            var packageRun = new TestRun(now) { GpuName = "Intel integrated GPU", PackageMonitored = true };
+            packageRun.Observe(Intel(85), now, intelId, now, true);
+            var packageResult = packageRun.Finish(now + second, "GPU prag");
+            var persisted = JsonSerializer.Deserialize<TestResult[]>(JsonSerializer.Serialize(new[] { packageResult, report }));
+            Check(packageResult.PackagePeak?.Celsius == 85 && packageResult.GpuPeak == null && packageResult.CorePeak == null &&
+                persisted is { Length: 2 } && persisted[0] == packageResult && persisted[1] == report,
+                "two results round-trip with iGPU package separate from GPU and aggregate core temperatures");
             Check(GpuThermals.Resolve(Intel(), intelId) is { UsesCpuPackage: true, Temperature: 50 }, "integrated Intel uses actual package value");
             Check(GpuThermals.Resolve(Intel(50, 70), intelId) is { UsesCpuPackage: false, Temperature: 70 }, "own GPU sensor preferred over package");
             Check(Protection.Check(Intel(), now, false, intelId, 95, 85) != null, "package fallback must be explicitly selected");
