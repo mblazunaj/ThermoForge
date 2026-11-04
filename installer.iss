@@ -1,6 +1,7 @@
 #ifndef MyAppVersion
-  #define MyAppVersion "1.0.2"
+  #define MyAppVersion "1.0.3"
 #endif
+#define ShortcutIconName "ThermoForge-forge.ico"
 [Setup]
 AppId={{53DE7C77-C9B7-4600-9501-EF29E07652DA}
 AppName=ThermoForge
@@ -22,6 +23,8 @@ SolidCompression=yes
 WizardStyle=modern
 SetupIconFile=ThermoForge\Assets\ThermoForge.ico
 UninstallDisplayIcon={app}\ThermoForge.exe
+; Refresh Explorer's icon cache for existing shortcuts after replacing the executable.
+ChangesAssociations=yes
 CloseApplications=yes
 RestartApplications=no
 AppMutex=Local\ThermoForge.UI
@@ -40,12 +43,13 @@ Name: "desktopicon"; Description: "Stvori prečac na radnoj površini"; Flags: u
 
 [Files]
 Source: "publish\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "ThermoForge\Assets\ThermoForge.ico"; DestDir: "{app}"; DestName: "{#ShortcutIconName}"; Flags: ignoreversion
 Source: "vendor\PawnIO_setup.exe"; Flags: dontcopy
 Source: "INSTALL-INFO.txt"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{autoprograms}\ThermoForge"; Filename: "{app}\ThermoForge.exe"; Comment: "CPU i GPU temperature i stress test"
-Name: "{autodesktop}\ThermoForge"; Filename: "{app}\ThermoForge.exe"; Tasks: desktopicon
+Name: "{autoprograms}\ThermoForge"; Filename: "{app}\ThermoForge.exe"; IconFilename: "{app}\{#ShortcutIconName}"; Comment: "CPU i GPU temperature i stress test"
+Name: "{autodesktop}\ThermoForge"; Filename: "{app}\ThermoForge.exe"; IconFilename: "{app}\{#ShortcutIconName}"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\ThermoForge.exe"; Description: "Pokreni ThermoForge"; Flags: nowait postinstall skipifsilent runascurrentuser
