@@ -7,7 +7,7 @@
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <AssemblyName>ThermoForge</AssemblyName>
-    <Version>1.1.1</Version>
+    <Version>1.1.2</Version>
     <ApplicationIcon>Assets\ThermoForge.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <PublishSingleFile>true</PublishSingleFile>

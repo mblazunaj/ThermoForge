@@ -74,12 +74,25 @@ public sealed class MainForm : Form
         Controls.Add(root);
         var header = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Margin = Padding.Empty };
         header.ColumnStyles.Add(new(SizeType.Percent, 100)); header.ColumnStyles.Add(new(SizeType.Absolute, 300));
-        var brand = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false };
+        var brand = new FlowLayoutPanel
+        {
+            AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.TopDown, WrapContents = false, Margin = Padding.Empty
+        };
         brand.Controls.Add(new Label { Text = "ThermoForge", Font = new("Segoe UI Semibold", 22), AutoSize = true, Margin = Padding.Empty });
         brand.Controls.Add(new Label { Text = "Temperature i stress test · v" + UpdateService.Version, ForeColor = Muted, AutoSize = true, Margin = new(2, 0, 0, 0) });
-        var identity = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Margin = Padding.Empty };
+        var identity = new TableLayoutPanel
+        {
+            AutoSize = true, AutoSizeMode = AutoSizeMode.GrowAndShrink, Dock = DockStyle.Top,
+            ColumnCount = 2, RowCount = 1, Margin = Padding.Empty
+        };
         identity.ColumnStyles.Add(new(SizeType.Absolute, 58)); identity.ColumnStyles.Add(new(SizeType.Percent, 100));
-        identity.Controls.Add(new PictureBox { Image = Icon!.ToBitmap(), SizeMode = PictureBoxSizeMode.Zoom, Dock = DockStyle.Fill, Margin = new(0, 4, 12, 8) }, 0, 0);
+        identity.RowStyles.Add(new(SizeType.AutoSize));
+        identity.Controls.Add(new PictureBox
+        {
+            Image = Icon!.ToBitmap(), SizeMode = PictureBoxSizeMode.Zoom, Size = new(46, 46),
+            Anchor = AnchorStyles.Left, Margin = new(0, 0, 12, 0)
+        }, 0, 0);
         identity.Controls.Add(brand, 1, 0); header.Controls.Add(identity, 0, 0);
         var switcher = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 2, Margin = Padding.Empty };
         switcher.ColumnStyles.Add(new(SizeType.Percent, 50));
