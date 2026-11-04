@@ -1,10 +1,27 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
-  <rect x="8" y="8" width="240" height="240" rx="52" fill="#171719"/>
-  <g fill="none" stroke="#d8dadd" stroke-width="8" stroke-linecap="round">
-    <path d="M88 38v20m40-20v20m40-20v20M88 198v20m40-20v20m40-20v20M38 88h20m-20 40h20m-20 40h20M198 88h20m-20 40h20m-20 40h20"/>
-    <rect x="58" y="58" width="140" height="140" rx="20" fill="#222225"/>
+  <defs>
+    <linearGradient id="case" x2="0" y2="1">
+      <stop stop-color="#303949"/>
+      <stop offset="1" stop-color="#141a25"/>
+    </linearGradient>
+    <linearGradient id="rim" x2="0" y2="1">
+      <stop stop-color="#56647c"/>
+      <stop offset="1" stop-color="#313a4b"/>
+    </linearGradient>
+    <linearGradient id="heat" x2="0" y2="1">
+      <stop stop-color="#ffcd76"/>
+      <stop offset="1" stop-color="#ff794d"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="240" height="240" rx="56" fill="url(#rim)"/>
+  <rect x="12" y="12" width="232" height="232" rx="52" fill="url(#case)"/>
+  <g fill="none" stroke="#a8b8cf" stroke-width="14" stroke-linecap="round">
+    <path d="M88 35v20m80-20v20M88 201v20m80-20v20M35 88h20m-20 80h20M201 88h20m-20 80h20"/>
   </g>
-  <path d="M112 144V96c0-21 32-21 32 0v48c12 9 14 22 8 33-6 14-26 19-38 8-14-11-14-29-2-41Z" fill="#f1f2f4"/>
-  <rect x="122" y="98" width="12" height="67" rx="6" fill="#ff8748"/>
-  <circle cx="128" cy="166" r="15" fill="#ff8748"/>
+  <rect x="48" y="48" width="160" height="160" rx="31" fill="#8494ad"/>
+  <rect x="55" y="55" width="146" height="146" rx="24" fill="#111824"/>
+  <path d="M128 75 C136 75 142 81 142 89 V121 C142 127 145 130 149 134
+           C155 140 158 146 158 153 C158 170 145 183 128 183
+           C111 183 98 170 98 153 C98 146 101 140 107 134
+           C111 130 114 127 114 121 V89 C114 81 120 75 128 75Z" fill="url(#heat)"/>
 </svg>
