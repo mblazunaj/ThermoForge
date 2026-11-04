@@ -14,6 +14,7 @@ public sealed class MainForm : Form
     private readonly Label cpuTemp = Metric(), cpuLoad = Small(), cpuName = Small(), gpuTemp = Metric(), gpuLoad = Small(), status = Small(), timerValue = Metric(), sensorNote = Small();
     private readonly Label cpuProtection = Small(), gpuProtection = Small();
     private readonly Button cpuButton = Button("Pokreni CPU"), gpuButton = Button("Pokreni GPU"), stopButton = Button("Zaustavi sve"), updateButton = Button("Provjeri nadogradnje");
+    private readonly Button specStopButton = Button("Zaustavi sve");
     private readonly ComboBox duration = Combo(), adapterSelect = Combo();
     private readonly NumericUpDown cpuLimit = Limit(40, 110), gpuLimit = Limit(40, 105);
     private readonly DataGridView table = new();
@@ -65,13 +66,14 @@ public sealed class MainForm : Form
     }
     private void BuildUi()
     {
-        var root = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new(28, 20, 28, 18), ColumnCount = 1, RowCount = 6, BackColor = Ground };
+        var root = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new(28, 20, 28, 18), ColumnCount = 1, RowCount = 3, BackColor = Ground };
         root.ColumnStyles.Add(new(SizeType.Percent, 100));
-        foreach (var height in new[] { 66, 218, 142 }) root.RowStyles.Add(new(SizeType.Absolute, height));
-        root.RowStyles.Add(new(SizeType.Percent, 100)); root.RowStyles.Add(new(SizeType.Absolute, 54)); root.RowStyles.Add(new(SizeType.Absolute, 42));
+        root.RowStyles.Add(new(SizeType.Absolute, 66));
+        root.RowStyles.Add(new(SizeType.Percent, 100));
+        root.RowStyles.Add(new(SizeType.Absolute, 42));
         Controls.Add(root);
         var header = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Margin = Padding.Empty };
-        header.ColumnStyles.Add(new(SizeType.Percent, 100)); header.ColumnStyles.Add(new(SizeType.Absolute, 230));
+        header.ColumnStyles.Add(new(SizeType.Percent, 100)); header.ColumnStyles.Add(new(SizeType.Absolute, 300));
         var brand = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false };
         brand.Controls.Add(new Label { Text = "ThermoForge", Font = new("Segoe UI Semibold", 22), AutoSize = true, Margin = Padding.Empty });
         brand.Controls.Add(new Label { Text = "Temperature i stress test · v" + UpdateService.Version, ForeColor = Muted, AutoSize = true, Margin = new(2, 0, 0, 0) });
@@ -79,19 +81,50 @@ public sealed class MainForm : Form
         identity.ColumnStyles.Add(new(SizeType.Absolute, 58)); identity.ColumnStyles.Add(new(SizeType.Percent, 100));
         identity.Controls.Add(new PictureBox { Image = Icon!.ToBitmap(), SizeMode = PictureBoxSizeMode.Zoom, Dock = DockStyle.Fill, Margin = new(0, 4, 12, 8) }, 0, 0);
         identity.Controls.Add(brand, 1, 0); header.Controls.Add(identity, 0, 0);
-        var access = Small(); access.Text = IsAdmin() ? "Administratorski pristup" : "Ograničen pristup senzorima"; access.Anchor = AnchorStyles.Top | AnchorStyles.Right; header.Controls.Add(access, 1, 0); root.Controls.Add(header, 0, 0);
+        var switcher = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 2, Margin = Padding.Empty };
+        switcher.ColumnStyles.Add(new(SizeType.Percent, 50));
+        switcher.ColumnStyles.Add(new(SizeType.Percent, 50));
+        switcher.RowStyles.Add(new(SizeType.Absolute, 36));
+        switcher.RowStyles.Add(new(SizeType.Percent, 100));
+        var monitorTab = ViewTab("Nadzor i testovi");
+        monitorTab.Checked = true;
+        var specsTab = ViewTab("Specifikacije");
+        switcher.Controls.Add(monitorTab, 0, 0);
+        switcher.Controls.Add(specsTab, 1, 0);
+        var access = Small();
+        access.Text = IsAdmin() ? "Administratorski pristup" : "Ograničen pristup senzorima";
+        access.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+        switcher.Controls.Add(access, 0, 1);
+        switcher.SetColumnSpan(access, 2);
+        header.Controls.Add(switcher, 1, 0);
+        root.Controls.Add(header, 0, 0);
+
+        var body = new Panel { Dock = DockStyle.Fill, Margin = Padding.Empty };
+        var monitoring = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4, Margin = Padding.Empty };
+        monitoring.ColumnStyles.Add(new(SizeType.Percent, 100));
+        monitoring.RowStyles.Add(new(SizeType.Absolute, 218));
+        monitoring.RowStyles.Add(new(SizeType.Absolute, 142));
+        monitoring.RowStyles.Add(new(SizeType.Percent, 100));
+        monitoring.RowStyles.Add(new(SizeType.Absolute, 54));
+        var specifications = new SpecificationsPanel(Ground, Surface, Raised, Ink, Muted, closing.Token)
+        {
+            Visible = false, Padding = new(0, 10, 0, 8)
+        };
+        body.Controls.Add(specifications);
+        body.Controls.Add(monitoring);
+        root.Controls.Add(body, 0, 1);
         var devices = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Margin = new(0, 10, 0, 14) };
         devices.ColumnStyles.Add(new(SizeType.Percent, 50)); devices.ColumnStyles.Add(new(SizeType.Percent, 50));
         cpuProtection.Text = "Zaštita: najtoplija jezgra ili CPU paket";
         devices.Controls.Add(DevicePanel("CPU", cpuName, cpuTemp, cpuLoad, cpuButton, null, cpuProtection), 0, 0);
-        devices.Controls.Add(DevicePanel("GPU", null, gpuTemp, gpuLoad, gpuButton, adapterSelect, gpuProtection), 1, 0); root.Controls.Add(devices, 0, 1);
+        devices.Controls.Add(DevicePanel("GPU", null, gpuTemp, gpuLoad, gpuButton, adapterSelect, gpuProtection), 1, 0); monitoring.Controls.Add(devices, 0, 0);
         var controls = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, BackColor = Surface, Padding = new(18, 10, 18, 10), Margin = new(0, 0, 0, 14) };
         controls.ColumnStyles.Add(new(SizeType.Percent, 40)); controls.ColumnStyles.Add(new(SizeType.Percent, 31)); controls.ColumnStyles.Add(new(SizeType.Percent, 29));
         var timerPanel = Stack(); timerPanel.Controls.Add(Title("Zajednički timer")); duration.Width = 245; timerPanel.Controls.Add(duration); timerPanel.Controls.Add(timerValue); controls.Controls.Add(timerPanel, 0, 0);
         var limits = Stack(); limits.Controls.Add(Title("Zaustavi na temperaturi"));
         var cpuRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new(0, 5, 0, 0) }; cpuRow.Controls.Add(new Label { Text = "CPU", Width = 45, Padding = new(0, 5, 0, 0) }); cpuRow.Controls.Add(cpuLimit); cpuRow.Controls.Add(new Label { Text = "°C", AutoSize = true, Padding = new(0, 5, 0, 0) }); limits.Controls.Add(cpuRow);
         var gpuRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new(0, 5, 0, 0) }; gpuRow.Controls.Add(new Label { Text = "GPU", Width = 45, Padding = new(0, 5, 0, 0) }); gpuRow.Controls.Add(gpuLimit); gpuRow.Controls.Add(new Label { Text = "°C", AutoSize = true, Padding = new(0, 5, 0, 0) }); limits.Controls.Add(gpuRow); controls.Controls.Add(limits, 1, 0);
-        var emergency = Stack(); stopButton.Width = 185; stopButton.Height = 40; emergency.Controls.Add(stopButton); var keyHint = Small(); keyHint.Text = "Esc · zaustavi oba testa"; keyHint.Margin = new(2, 8, 0, 0); emergency.Controls.Add(keyHint); controls.Controls.Add(emergency, 2, 0); root.Controls.Add(controls, 0, 2);
+        var emergency = Stack(); stopButton.Width = 185; stopButton.Height = 40; emergency.Controls.Add(stopButton); var keyHint = Small(); keyHint.Text = "Esc · zaustavi oba testa"; keyHint.Margin = new(2, 8, 0, 0); emergency.Controls.Add(keyHint); controls.Controls.Add(emergency, 2, 0); monitoring.Controls.Add(controls, 0, 1);
         tips.SetToolTip(timerValue, "Odbrojavanje počinje s prvim testom. Uključivanje drugog testa ne vraća timer na početak. Istek zaustavlja oba testa.");
         tips.SetToolTip(cpuLimit, "Zaštita koristi najvišu dostupnu CPU temperaturu, uključujući jezgre i paket."); tips.SetToolTip(gpuLimit, "Prag GPU senzora. Za integrirani Intel GPU bez vlastite temperature ovaj prag vrijedi za CPU paket korišten u nadzoru.");
         var data = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2, Margin = Padding.Empty };
@@ -104,9 +137,31 @@ public sealed class MainForm : Form
         table.Columns.Add(new DataGridViewTextBoxColumn { Name = "sensor", HeaderText = "Senzor", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill, FillWeight = 33 });
         foreach (var pair in new[] { ("current", "Sada"), ("max", "Maksimum") })
         { var col = new DataGridViewTextBoxColumn { Name = pair.Item1, HeaderText = pair.Item2, Width = 112, DefaultCellStyle = new() { Alignment = DataGridViewContentAlignment.MiddleRight, Font = new("Consolas", 10) } }; col.HeaderCell.Style.Alignment = DataGridViewContentAlignment.MiddleRight; table.Columns.Add(col); }
-        data.Controls.Add(table, 0, 1); root.Controls.Add(data, 0, 3);
-        sensorNote.Dock = DockStyle.Fill; sensorNote.AutoSize = false; sensorNote.TextAlign = ContentAlignment.MiddleLeft; root.Controls.Add(sensorNote, 0, 4);
-        var footer = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Margin = Padding.Empty }; footer.ColumnStyles.Add(new(SizeType.Percent, 100)); footer.ColumnStyles.Add(new(SizeType.Absolute, 220)); status.Dock = DockStyle.Fill; status.AutoSize = false; status.TextAlign = ContentAlignment.MiddleLeft; footer.Controls.Add(status, 0, 0); footer.Controls.Add(updateButton, 1, 0); root.Controls.Add(footer, 0, 5);
+        data.Controls.Add(table, 0, 1); monitoring.Controls.Add(data, 0, 2);
+        sensorNote.Dock = DockStyle.Fill; sensorNote.AutoSize = false; sensorNote.TextAlign = ContentAlignment.MiddleLeft; monitoring.Controls.Add(sensorNote, 0, 3);
+        var footer = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, Margin = Padding.Empty };
+        footer.ColumnStyles.Add(new(SizeType.Percent, 100));
+        var specAction = new ColumnStyle(SizeType.Absolute, 0);
+        footer.ColumnStyles.Add(specAction);
+        footer.ColumnStyles.Add(new(SizeType.Absolute, 220));
+        status.Dock = DockStyle.Fill; status.AutoSize = false; status.TextAlign = ContentAlignment.MiddleLeft;
+        footer.Controls.Add(status, 0, 0);
+        specStopButton.Dock = DockStyle.Fill;
+        specStopButton.Margin = new(0, 0, 10, 7);
+        specStopButton.Visible = false;
+        specStopButton.Click += (_, _) => { stress.StopAll(); UpdateView(); };
+        footer.Controls.Add(specStopButton, 1, 0);
+        footer.Controls.Add(updateButton, 2, 0);
+        root.Controls.Add(footer, 0, 2);
+        specsTab.CheckedChanged += async (_, _) =>
+        {
+            bool showSpecs = specsTab.Checked;
+            monitoring.Visible = !showSpecs;
+            specifications.Visible = showSpecs;
+            specAction.Width = showSpecs ? 144 * DeviceDpi / 96 : 0;
+            specStopButton.Visible = showSpecs;
+            if (showSpecs) await specifications.LoadAsync(closing.Token);
+        };
         tips.SetToolTip(updateButton, "Provjera novih službenih objava na GitHubu. Nadogradnja se preuzima i instalira tek nakon tvoje potvrde.");
         var menu = new ContextMenuStrip(); menu.Items.Add("Mapa dnevnika i postavki", null, (_, _) => { Directory.CreateDirectory(Settings.Folder); Process.Start(new ProcessStartInfo(Settings.Folder) { UseShellExecute = true }); });
         var auto = new ToolStripMenuItem("Automatska provjera nadogradnji") { Checked = settings.CheckUpdates, CheckOnClick = true }; auto.CheckedChanged += (_, _) => { settings.CheckUpdates = auto.Checked; settings.Save(); }; menu.Items.Add(auto); menu.Items.Add("O programu i licencije", null, (_, _) => MessageBox.Show($"ThermoForge {UpdateService.Version}\nCPU SIMD + Direct3D 11 GPU compute\n\nZaštita: najviša dostupna temperatura. Integrirani Intel GPU bez vlastitog senzora koristi jasno označen nadzor CPU paketa uz GPU prag. To nije izravno mjerenje ni izravna temperaturna zaštita GPU-a. Bez dostupnog izvora za nadzor nema testa.\n\nNeki procesori ne daju temperature pojedinih jezgri. Visoko opterećenje ovisi o hardveru, hlađenju i ograničenjima sustava.\n\nLicencije i izvori: THIRD-PARTY-NOTICES.txt uz program.\nGitHub: github.com/mblazunaj/ThermoForge", "O programu", MessageBoxButtons.OK, MessageBoxIcon.Information)); ContextMenuStrip = menu;
@@ -115,6 +170,12 @@ public sealed class MainForm : Form
     private static Label Title(string text) => new() { Text = text, AutoSize = true, Font = new("Segoe UI Semibold", 11), Margin = new(0, 0, 0, 5) };
     private static Label Small() => new() { AutoSize = true, ForeColor = Muted, Font = new("Segoe UI", 9), Margin = new(0, 2, 0, 0) };
     private static Label Metric() => new() { Text = "—", AutoSize = true, ForeColor = Ink, Font = new("Consolas", 24), Margin = new(0, 4, 0, 0) };
+    private static RadioButton ViewTab(string text) => new()
+    {
+        Text = text, TextAlign = ContentAlignment.MiddleCenter, Appearance = Appearance.Button, Dock = DockStyle.Fill,
+        FlatStyle = FlatStyle.Flat, ForeColor = Ink, BackColor = Ground, UseVisualStyleBackColor = false,
+        Margin = new(3, 0, 0, 3), FlatAppearance = { BorderSize = 0, CheckedBackColor = Raised, MouseOverBackColor = Surface }
+    };
     private static Button Button(string text) => new ActionButton { Text = text, Height = 35, Width = 210, FlatStyle = FlatStyle.Flat, BackColor = Raised, ForeColor = Ink, Cursor = Cursors.Hand, Margin = new(0, 0, 0, 0), UseVisualStyleBackColor = false, FlatAppearance = { BorderColor = Line, BorderSize = 1 } };
     private static ComboBox Combo() => new() { DropDownStyle = ComboBoxStyle.DropDownList, FlatStyle = FlatStyle.Flat, BackColor = Raised, ForeColor = Ink, Width = 300, IntegralHeight = true, Margin = new(0, 2, 0, 0) };
     private static NumericUpDown Limit(int min, int max) => new() { Minimum = min, Maximum = max, Width = 65, BackColor = Raised, ForeColor = Ink, BorderStyle = BorderStyle.FixedSingle };
@@ -155,7 +216,7 @@ public sealed class MainForm : Form
         gpuProtection.Text = !fresh ? "Učitavanje temperaturnih senzora…" : packageMode ? $"GPU temperatura nije dostupna.\nNadzor: CPU paket {Temperature(packageTemp)} · prag {settings.GpuLimit} °C" : selectedGpu?.Hottest != null ? "Zaštita: najviša GPU temperatura, uključujući hotspot" : "GPU temperatura nije dostupna.\nTest čeka valjan izvor za temperaturni nadzor.";
         tips.SetToolTip(gpuButton, packageMode ? "Integrirani GPU nema vlastito očitanje. Test prati CPU paket uz GPU prag; to nije izravna temperaturna zaštita GPU-a." : selectedGpu == null ? "GPU nije jednoznačno povezan sa senzorima." : gpuSource == null ? "Nema GPU temperature ni dostupnog CPU paketa za nadzor integriranog Intel GPU-a." : "Pokreni ili zaustavi test odabranog GPU-a.");
         cpuButton.FlatAppearance.BorderColor = stress.CpuRunning ? Danger : Line; gpuButton.FlatAppearance.BorderColor = stress.GpuRunning ? Danger : Line;
-        stopButton.Enabled = stress.Running; duration.Enabled = cpuLimit.Enabled = gpuLimit.Enabled = adapterSelect.Enabled = !stress.Running;
+        stopButton.Enabled = specStopButton.Enabled = stress.Running; duration.Enabled = cpuLimit.Enabled = gpuLimit.Enabled = adapterSelect.Enabled = !stress.Running;
         timerValue.Text = stress.Running ? (settings.Minutes == 0 ? "∞ · " + FormatTime(stress.Elapsed) : FormatTime(TimeSpan.FromMinutes(settings.Minutes) - stress.Elapsed)) : settings.Minutes == 0 ? "Neograničeno" : $"{settings.Minutes:00}:00";
         status.Text = stress.Message; status.ForeColor = stress.Message.StartsWith("Zaustavljeno:") || stress.Message.StartsWith("Test je prekinut") ? Danger : Muted;
         bool admin = IsAdmin();

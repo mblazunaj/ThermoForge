@@ -10,6 +10,7 @@ namespace ThermoForge;
 
 public record GpuAdapter(uint Index, string Name, ulong Memory)
 {
+    public ulong SharedMemory { get; init; }
     public override string ToString() => Name;
 }
 public sealed class GpuWorkload : IDisposable
@@ -26,7 +27,12 @@ public sealed class GpuWorkload : IDisposable
         using var f = DXGI.CreateDXGIFactory1<IDXGIFactory1>();
         for (uint i = 0; f.EnumAdapters1(i, out var a).Success; i++)
         {
-            using (a) { var d = a.Description1; if ((d.Flags & AdapterFlags.Software) == 0) list.Add(new(i, d.Description.TrimEnd('\0'), (ulong)d.DedicatedVideoMemory)); }
+            using (a)
+            {
+                var d = a.Description1;
+                if ((d.Flags & AdapterFlags.Software) == 0)
+                    list.Add(new(i, d.Description.TrimEnd('\0'), (ulong)d.DedicatedVideoMemory) { SharedMemory = (ulong)d.SharedSystemMemory });
+            }
         }
         return list.OrderByDescending(a => a.Memory).ToArray();
     }
