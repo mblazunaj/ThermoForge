@@ -138,8 +138,9 @@ internal static class ComputerSpecs
             audio.Groups.Add(new(Text(device, "Name") ?? "Zvučni uređaj", new SpecField("Proizvođač", Text(device, "Manufacturer"))));
 
         var overview = new SpecSection("Pregled", [new("Glavne komponente",
+            new("Naziv računala", Environment.MachineName),
             new("Windows", Join(windows, Text(os, "BuildNumber") ?? osVersion.Build.ToString())),
-            new("Računalo", machine),
+            new("Model računala", machine),
             new("Procesor", JoinNames(cpu.Groups)),
             new(installed == null && usable != null ? "Memorija dostupna sustavu" : "Memorija", installed ?? usable),
             new("Matična ploča", boardModel),
