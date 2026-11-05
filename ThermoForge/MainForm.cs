@@ -366,7 +366,7 @@ public sealed class MainForm : Form
         try
         {
             string file = await UpdateService.DownloadAsync(availableRelease, closing.Token);
-            var info = new ProcessStartInfo(file) { UseShellExecute = true, Verb = "runas", Arguments = "/SILENT /NORESTART /CLOSEAPPLICATIONS" };
+            var info = new ProcessStartInfo(file) { UseShellExecute = true, Verb = "runas", Arguments = "/SP- /NORESTART /CLOSEAPPLICATIONS" };
             Process.Start(info); Close();
         }
         catch (OperationCanceledException) { }

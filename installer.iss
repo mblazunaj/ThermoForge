@@ -1,5 +1,5 @@
 #ifndef MyAppVersion
-  #define MyAppVersion "1.2.1"
+  #define MyAppVersion "1.2.2"
 #endif
 #define ShortcutIconName "ThermoForge-forge.ico"
 [Setup]
@@ -38,6 +38,10 @@ SetupLogging=yes
 Name: "croatian"; MessagesFile: "Croatian.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
+[CustomMessages]
+croatian.LaunchThermoForge=Pokreni ThermoForge nakon instalacije
+english.LaunchThermoForge=Launch ThermoForge after installation
+
 [Tasks]
 Name: "desktopicon"; Description: "Stvori prečac na radnoj površini"; Flags: unchecked
 
@@ -52,7 +56,7 @@ Name: "{autoprograms}\ThermoForge"; Filename: "{app}\ThermoForge.exe"; IconFilen
 Name: "{autodesktop}\ThermoForge"; Filename: "{app}\ThermoForge.exe"; IconFilename: "{app}\{#ShortcutIconName}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\ThermoForge.exe"; Description: "Pokreni ThermoForge"; Flags: nowait postinstall skipifsilent runascurrentuser
+Filename: "{app}\ThermoForge.exe"; Description: "{cm:LaunchThermoForge}"; Flags: nowait postinstall unchecked skipifsilent runascurrentuser
 
 [Code]
 var
