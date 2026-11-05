@@ -1,5 +1,5 @@
 #ifndef MyAppVersion
-  #define MyAppVersion "1.2.4"
+  #define MyAppVersion "1.2.5"
 #endif
 #define ShortcutIconName "ThermoForge-forge.ico"
 [Setup]
@@ -68,7 +68,9 @@ var
 
 procedure InitializeWizard;
 begin
-  { Leave room for the themed checkbox glyph at enlarged Windows DPI. }
+  { Leave room for themed checkbox glyphs in every wizard list at enlarged DPI. }
+  WizardForm.ComponentsList.Offset := ScaleX(12);
+  WizardForm.TasksList.Offset := ScaleX(12);
   WizardForm.RunList.Offset := ScaleX(12);
 end;
 
