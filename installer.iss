@@ -1,5 +1,5 @@
 #ifndef MyAppVersion
-  #define MyAppVersion "1.2.3"
+  #define MyAppVersion "1.2.4"
 #endif
 #define ShortcutIconName "ThermoForge-forge.ico"
 [Setup]
@@ -65,6 +65,12 @@ Filename: "{app}\ThermoForge.exe"; Flags: nowait skipifnotsilent runascurrentuse
 var
   DriverNeedsRestart: Boolean;
   LaunchDecisionMade, LaunchRequested: Boolean;
+
+procedure InitializeWizard;
+begin
+  { Leave room for the themed checkbox glyph at enlarged Windows DPI. }
+  WizardForm.RunList.Offset := ScaleX(12);
+end;
 
 function ConfirmSilentLaunch: Boolean;
 begin
