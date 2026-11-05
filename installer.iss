@@ -1,5 +1,5 @@
 #ifndef MyAppVersion
-  #define MyAppVersion "1.2.2"
+  #define MyAppVersion "1.2.3"
 #endif
 #define ShortcutIconName "ThermoForge-forge.ico"
 [Setup]
@@ -41,6 +41,8 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [CustomMessages]
 croatian.LaunchThermoForge=Pokreni ThermoForge nakon instalacije
 english.LaunchThermoForge=Launch ThermoForge after installation
+croatian.ConfirmLaunchThermoForge=ThermoForge je uspješno instaliran.%n%nŽelite li sada pokrenuti novu verziju?
+english.ConfirmLaunchThermoForge=ThermoForge has been installed successfully.%n%nWould you like to launch the new version now?
 
 [Tasks]
 Name: "desktopicon"; Description: "Stvori prečac na radnoj površini"; Flags: unchecked
@@ -57,10 +59,25 @@ Name: "{autodesktop}\ThermoForge"; Filename: "{app}\ThermoForge.exe"; IconFilena
 
 [Run]
 Filename: "{app}\ThermoForge.exe"; Description: "{cm:LaunchThermoForge}"; Flags: nowait postinstall unchecked skipifsilent runascurrentuser
+Filename: "{app}\ThermoForge.exe"; Flags: nowait skipifnotsilent runascurrentuser; Check: ConfirmSilentLaunch
 
 [Code]
 var
   DriverNeedsRestart: Boolean;
+  LaunchDecisionMade, LaunchRequested: Boolean;
+
+function ConfirmSilentLaunch: Boolean;
+begin
+  Result := False;
+  if not WizardSilent or DriverNeedsRestart then Exit;
+  if not LaunchDecisionMade then begin
+    LaunchDecisionMade := True;
+    LaunchRequested := SuppressibleMsgBox(
+      CustomMessage('ConfirmLaunchThermoForge'), mbConfirmation,
+      MB_YESNO or MB_DEFBUTTON2, IDNO) = IDYES;
+  end;
+  Result := LaunchRequested;
+end;
 
 function PawnIOCurrent: Boolean;
 var V: String; Packed, Minimum: Int64;
