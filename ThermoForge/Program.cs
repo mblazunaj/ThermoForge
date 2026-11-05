@@ -150,6 +150,14 @@ public static class SelfTest
             Check(GpuThermals.Resolve(Intel(float.NaN), intelId) == null, "invalid package value blocks fallback");
             var compute = new DeviceReading("gpu", "GPU", false, [new("3d", "D3D 3D", "Load", 2, 2), new("compute", "D3D Compute", "Load", 99, 99)]);
             Check(compute.Load == 99, "compute workload utilization is displayed");
+            Check((compute with { Sensors = [new("compute", "D3D Compute", "Load", 100.6f, 100.6f)] }).Load == 100 &&
+                (compute with { Sensors = [new("compute", "D3D Compute", "Load", float.NaN, float.NaN)] }).Load == null,
+                "driver utilization jitter is bounded without inventing a missing value");
+            Check(GpuWorkload.NextDispatchCount(4, TimeSpan.FromMilliseconds(20)) == 8 &&
+                GpuWorkload.NextDispatchCount(32, TimeSpan.FromMilliseconds(20)) == 32, "GPU batches grow only up to the queue cap");
+            Check(GpuWorkload.NextDispatchCount(32, TimeSpan.FromMilliseconds(90)) == 16 &&
+                GpuWorkload.NextDispatchCount(1, TimeSpan.FromMilliseconds(90)) == 1 &&
+                GpuWorkload.NextDispatchCount(8, TimeSpan.FromMilliseconds(60)) == 8, "GPU batch sizing backs off on slow completion");
             using (var ui = new MainForm(new FixedSensors(Intel()), [new(0, "Intel integrated GPU", 0)]))
             {
                 var state = ui.GpuUiState();

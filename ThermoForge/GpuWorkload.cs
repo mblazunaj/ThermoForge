@@ -15,12 +15,14 @@ public record GpuAdapter(uint Index, string Name, ulong Memory)
 }
 public sealed class GpuWorkload : IDisposable
 {
+    private const int MaxPendingBatches = 3;
+    private const int MaxDispatchesPerBatch = 32;
     private readonly ID3D11Device device;
     private readonly ID3D11DeviceContext context;
     private readonly ID3D11Buffer buffer;
     private readonly ID3D11UnorderedAccessView view;
     private readonly ID3D11ComputeShader shader;
-    private readonly ID3D11Query query;
+    private readonly ID3D11Query[] completions;
     public static GpuAdapter[] Adapters()
     {
         var list = new List<GpuAdapter>();
@@ -66,29 +68,69 @@ public sealed class GpuWorkload : IDisposable
             shader = device.CreateComputeShader((void*)BlobPointer(code), new PointerUSize(BlobSize(code)));
         }
         finally { if (code != 0) Marshal.Release(code); if (errors != 0) Marshal.Release(errors); }
-        query = device.CreateQuery(new QueryDescription(QueryType.Event));
+        completions = new ID3D11Query[MaxPendingBatches];
+        for (int i = 0; i < completions.Length; i++)
+            completions[i] = device.CreateQuery(new QueryDescription(QueryType.Event));
         context.CSSetShader(shader);
         context.CSSetUnorderedAccessView(0, view);
     }
     public void Run(CancellationToken token, int? maxBatches = null)
     {
-        int batches = 0;
-        // A bounded dispatch and at most four queued batches keep stop latency short and avoid TDR-sized kernels.
-        while (!token.IsCancellationRequested && (!maxBatches.HasValue || batches < maxBatches))
+        long remaining = maxBatches.HasValue ? maxBatches.Value : long.MaxValue;
+        int first = 0, pending = 0, dispatches = 4;
+        var submitted = new (long Timestamp, int Dispatches)[MaxPendingBatches];
+        // Keep a few batches ready while waiting for the oldest one. The dispatch dimensions stay fixed.
+        while (!token.IsCancellationRequested && (remaining > 0 || pending > 0))
         {
-            for (int i = 0; i < 4 && !token.IsCancellationRequested; i++) context.Dispatch(512, 1, 1);
-            context.End(query); context.Flush();
-            var watch = Stopwatch.StartNew();
-            while (context.GetData(query, nint.Zero, 0, AsyncGetDataFlags.None).Code == 1)
+            while (pending < MaxPendingBatches && remaining > 0)
+            {
+                int slot = (first + pending) % MaxPendingBatches;
+                submitted[slot] = (Stopwatch.GetTimestamp(), dispatches);
+                for (int i = 0; i < dispatches; i++)
+                {
+                    if (token.IsCancellationRequested) return;
+                    context.Dispatch(512, 1, 1);
+                }
+                if (token.IsCancellationRequested) return;
+                context.End(completions[slot]);
+                context.Flush();
+                pending++;
+                remaining--;
+            }
+            var batch = submitted[first];
+            Result status;
+            while ((status = context.GetData(completions[first], nint.Zero, 0, AsyncGetDataFlags.DoNotFlush)).Code == 1)
             {
                 if (token.IsCancellationRequested) return;
-                if (watch.Elapsed > TimeSpan.FromSeconds(3)) throw new TimeoutException("GPU ne odgovara. Test je zaustavljen.");
-                Thread.Sleep(1);
+                if (Stopwatch.GetElapsedTime(batch.Timestamp) > TimeSpan.FromSeconds(3))
+                    throw new TimeoutException("GPU ne odgovara. Test je zaustavljen.");
+                // A timed wait can outlast a short GPU batch. Yield without waiting for the timer tick.
+                Thread.SpinWait(64);
+                Thread.Yield();
             }
-            device.DeviceRemovedReason.CheckError(); batches++;
+            status.CheckError();
+            device.DeviceRemovedReason.CheckError();
+            // Older batches can have a previous size. Only samples at the current size tune the queue.
+            if (batch.Dispatches == dispatches)
+                dispatches = NextDispatchCount(dispatches, Stopwatch.GetElapsedTime(batch.Timestamp));
+            first = (first + 1) % MaxPendingBatches;
+            pending--;
         }
     }
-    public void Dispose() { context.ClearState(); query.Dispose(); shader.Dispose(); view.Dispose(); buffer.Dispose(); context.Dispose(); device.Dispose(); }
+
+    internal static int NextDispatchCount(int current, TimeSpan latency)
+    {
+        if (latency > TimeSpan.FromMilliseconds(85)) return Math.Max(1, current / 2);
+        if (latency < TimeSpan.FromMilliseconds(35)) return Math.Min(MaxDispatchesPerBatch, current * 2);
+        return current;
+    }
+
+    public void Dispose()
+    {
+        context.ClearState();
+        foreach (var completion in completions) completion.Dispose();
+        shader.Dispose(); view.Dispose(); buffer.Dispose(); context.Dispose(); device.Dispose();
+    }
     private static unsafe nint BlobPointer(nint blob) => ((delegate* unmanaged[Stdcall]<nint, nint>)(*(nint**)blob)[3])(blob);
     private static unsafe nuint BlobSize(nint blob) => ((delegate* unmanaged[Stdcall]<nint, nuint>)(*(nint**)blob)[4])(blob);
     [DllImport("d3dcompiler_47.dll", CallingConvention = CallingConvention.StdCall)]

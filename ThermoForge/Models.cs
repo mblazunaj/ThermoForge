@@ -10,9 +10,17 @@ public record DeviceReading(string Id, string Name, bool IsCpu, Reading[] Sensor
     public float? Hottest => Temperatures.Where(s => s.Value.HasValue).Select(s => s.Value).DefaultIfEmpty().Max();
     public float? Temperature => Temperatures.FirstOrDefault(s => s.Name.Contains(IsCpu ? "Package" : "GPU Core", StringComparison.OrdinalIgnoreCase))?.Value
         ?? Temperatures.FirstOrDefault(s => s.Name.Contains("Tctl", StringComparison.OrdinalIgnoreCase))?.Value ?? Hottest;
-    public float? Load => IsCpu ? Sensors.FirstOrDefault(s => s.Kind == "Load" && s.Name.Contains("Total"))?.Value
-        : Sensors.FirstOrDefault(s => s.Kind == "Load" && s.Name == "GPU Core")?.Value
-          ?? Sensors.Where(s => s.Kind == "Load" && (s.Name == "D3D 3D" || s.Name.Contains("Compute", StringComparison.OrdinalIgnoreCase))).Select(s => s.Value).DefaultIfEmpty().Max();
+    public float? Load
+    {
+        get
+        {
+            float? value = IsCpu ? Sensors.FirstOrDefault(s => s.Kind == "Load" && s.Name.Contains("Total"))?.Value
+                : Sensors.FirstOrDefault(s => s.Kind == "Load" && s.Name == "GPU Core")?.Value
+                  ?? Sensors.Where(s => s.Kind == "Load" && (s.Name == "D3D 3D" || s.Name.Contains("Compute", StringComparison.OrdinalIgnoreCase))).Select(s => s.Value).DefaultIfEmpty().Max();
+            // Driver counters can briefly exceed 100% around sampling boundaries.
+            return value is float percent && float.IsFinite(percent) ? Math.Clamp(percent, 0, 100) : null;
+        }
+    }
 }
 public record Snapshot(long Timestamp, DeviceReading[] Devices, string? Error)
 {
