@@ -28,7 +28,7 @@ internal sealed class TestRun(long started)
                 {
                     string name = cpu.Name + " · " + sensor.Name;
                     KeepPeak(ref cpuPeak, name, sensor.Value);
-                    if (IsCore(sensor.Name)) KeepPeak(ref corePeak, name, sensor.Value);
+                    if (DeviceMetrics.IsCore(sensor.Name)) KeepPeak(ref corePeak, name, sensor.Value);
                 }
         }
         if (gpuId == null || snapshot.Timestamp < gpuStarted || snapshot.Timestamp <= lastGpuSample) return;
@@ -43,14 +43,6 @@ internal sealed class TestRun(long started)
 
     internal TestResult Finish(long now, string reason) => new(DateTimeOffset.Now, Stopwatch.GetElapsedTime(Started, now),
         CpuTested, GpuName, PackageMonitored, cpuPeak, corePeak, gpuPeak, packagePeak, reason);
-
-    private static bool IsCore(string name)
-    {
-        int index = name.IndexOf("Core ", StringComparison.OrdinalIgnoreCase);
-        if (index < 0) return false;
-        var number = name.AsSpan(index + "Core ".Length).TrimStart('#');
-        return number.Length > 0 && char.IsAsciiDigit(number[0]);
-    }
 
     private static void KeepPeak(ref ThermalPeak? peak, string name, float? reading)
     {

@@ -10,8 +10,14 @@ internal sealed class TelemetryPanel : TableLayoutPanel
     private readonly LiveGraph graph;
     private readonly ComboBox chooser;
     private readonly RichTextBox summary;
+    private readonly TableLayoutPanel resultPanel;
+    private readonly DataGridView comparison;
+    private readonly Label comparisonNote;
+    private readonly Button export;
     private readonly Font emphasis = new("Segoe UI", 10, FontStyle.Bold);
     private TestResult[] results = [];
+    private bool exporting;
+    internal event Func<TestResult[], Task>? ExportRequested;
 
     internal TelemetryPanel(Color ground, Color surface, Color raised, Color ink, Color muted)
     {
@@ -24,14 +30,17 @@ internal sealed class TelemetryPanel : TableLayoutPanel
         graph = new LiveGraph(surface, ink, muted) { Margin = new(0, 0, 14, 0) };
         Controls.Add(graph, 0, 0);
 
-        var resultPanel = new TableLayoutPanel
+        resultPanel = new TableLayoutPanel
         {
             Dock = DockStyle.Fill, BackColor = surface, Padding = new(14, 11, 14, 12),
-            ColumnCount = 1, RowCount = 3, Margin = Padding.Empty
+            ColumnCount = 1, RowCount = 5, Margin = Padding.Empty
         };
         resultPanel.RowStyles.Add(new(SizeType.Absolute, 33));
         resultPanel.RowStyles.Add(new(SizeType.Absolute, 36));
         resultPanel.RowStyles.Add(new(SizeType.Percent, 100));
+        resultPanel.RowStyles.Add(new(SizeType.Absolute, 0));
+        resultPanel.RowStyles.Add(new(SizeType.Absolute, 38));
+        resultPanel.ColumnStyles.Add(new(SizeType.Percent, 100));
         var heading = new Label
         {
             Text = "Sažetak testa", Dock = DockStyle.Fill, ForeColor = ink,
@@ -49,10 +58,70 @@ internal sealed class TelemetryPanel : TableLayoutPanel
             ReadOnly = true, DetectUrls = false, ScrollBars = RichTextBoxScrollBars.Vertical,
             AccessibleName = "Rezultat testa", Margin = new(0, 6, 0, 0)
         };
+        comparison = new DataGridView
+        {
+            Dock = DockStyle.Fill, BorderStyle = BorderStyle.None, BackgroundColor = surface,
+            ReadOnly = true, AllowUserToAddRows = false, AllowUserToDeleteRows = false,
+            AllowUserToResizeRows = false, AllowUserToResizeColumns = false, RowHeadersVisible = false,
+            EnableHeadersVisualStyles = false, AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.AllCells,
+            ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.AutoSize,
+            CellBorderStyle = DataGridViewCellBorderStyle.SingleHorizontal, GridColor = ground,
+            ColumnHeadersBorderStyle = DataGridViewHeaderBorderStyle.None, Visible = false,
+            AccessibleName = "Usporedba zadnja dva testa", Margin = new(0, 6, 0, 0)
+        };
+        comparison.DefaultCellStyle = new()
+        {
+            BackColor = surface, ForeColor = ink, SelectionBackColor = raised, SelectionForeColor = ink,
+            WrapMode = DataGridViewTriState.True, Padding = new(8, 7, 8, 7)
+        };
+        comparison.ColumnHeadersDefaultCellStyle = new()
+        {
+            BackColor = surface, ForeColor = muted, Padding = new(8, 6, 8, 6)
+        };
+        foreach (var column in new[] { ("Svojstvo", 30f), ("Prethodni test", 35f), ("Zadnji test", 35f) })
+            comparison.Columns.Add(new DataGridViewTextBoxColumn
+            {
+                HeaderText = column.Item1, FillWeight = column.Item2,
+                AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill, SortMode = DataGridViewColumnSortMode.NotSortable
+            });
+        comparisonNote = new Label
+        {
+            Text = TestReport.ComparisonNote, AutoSize = false, Dock = DockStyle.Fill,
+            ForeColor = muted, Margin = new(0, 8, 0, 10), Visible = false
+        };
+        export = new Button
+        {
+            Text = "Izvezi izvještaj…", Dock = DockStyle.Fill, FlatStyle = FlatStyle.Flat,
+            BackColor = raised, ForeColor = ink, UseVisualStyleBackColor = false,
+            Margin = new(0, 4, 0, 0)
+        };
+        export.FlatAppearance.BorderColor = raised;
+        export.Click += async (_, _) =>
+        {
+            var selection = chooser.SelectedIndex == 2 ? results.ToArray() :
+                chooser.SelectedIndex >= 0 ? new[] { results[chooser.SelectedIndex] } : [];
+            if (selection.Length == 0 || ExportRequested == null) return;
+            exporting = true;
+            export.Enabled = false;
+            export.Text = "Priprema izvještaja…";
+            try { await ExportRequested(selection); }
+            catch (OperationCanceledException) { }
+            catch (Exception e)
+            {
+                Diagnostics.Log("Izvještaj: " + e.Message);
+                if (!IsDisposed) MessageBox.Show(FindForm(), "Izvještaj nije pripremljen. Pokušaj ponovno.", "ThermoForge", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally { exporting = false; if (!IsDisposed) { export.Enabled = results.Length > 0; export.Text = "Izvezi izvještaj…"; } }
+        };
         chooser.SelectedIndexChanged += (_, _) => ShowResult();
         resultPanel.Controls.Add(heading, 0, 0);
         resultPanel.Controls.Add(chooser, 0, 1);
-        resultPanel.Controls.Add(summary, 0, 2);
+        var content = new Panel { Dock = DockStyle.Fill, Margin = Padding.Empty };
+        content.Controls.Add(summary);
+        content.Controls.Add(comparison);
+        resultPanel.Controls.Add(content, 0, 2);
+        resultPanel.Controls.Add(comparisonNote, 0, 3);
+        resultPanel.Controls.Add(export, 0, 4);
         Controls.Add(resultPanel, 1, 0);
         SetResults([]);
     }
@@ -66,6 +135,7 @@ internal sealed class TelemetryPanel : TableLayoutPanel
         chooser.Items.Clear();
         if (history.Length > 0) chooser.Items.Add("Zadnji test");
         if (history.Length > 1) chooser.Items.Add("Prethodni test");
+        if (history.Length > 1) chooser.Items.Add("Usporedi zadnja dva");
         chooser.Enabled = history.Length > 1;
         if (history.Length == 0) ShowResult();
         else chooser.SelectedIndex = 0;
@@ -73,23 +143,38 @@ internal sealed class TelemetryPanel : TableLayoutPanel
 
     private void ShowResult()
     {
+        bool compare = chooser.SelectedIndex == 2;
+        SuspendLayout();
+        graph.Visible = !compare;
+        summary.Visible = !compare;
+        comparison.Visible = comparisonNote.Visible = compare;
+        resultPanel.RowStyles[3].Height = compare ? 58 * DeviceDpi / 96f : 0;
+        SetColumn(resultPanel, compare ? 0 : 1);
+        SetColumnSpan(resultPanel, compare ? 2 : 1);
+        export.Enabled = !exporting && results.Length > 0;
+        ResumeLayout(true);
+        if (compare)
+        {
+            var previous = TestReport.Fields(results[1]);
+            var latest = TestReport.Fields(results[0]);
+            comparison.Rows.Clear();
+            for (int i = 0; i < latest.Length; i++)
+            {
+                var row = comparison.Rows[comparison.Rows.Add(latest[i].Label, previous[i].Value, latest[i].Value)];
+                if (i == 1 || i >= 4)
+                    for (int column = 1; column <= 2; column++) row.Cells[column].Style.Alignment = DataGridViewContentAlignment.MiddleRight;
+            }
+            comparison.ClearSelection();
+            return;
+        }
         summary.Clear();
         if (chooser.SelectedIndex < 0)
         {
             summary.Text = "Sažetak će se prikazati kad test završi. Ovdje će ostati zadnja dva rezultata.";
             return;
         }
-        var result = results[chooser.SelectedIndex];
-        var elapsed = result.Duration;
-        var devices = result.CpuTested ? result.GpuName == null ? "CPU" : "CPU + " + result.GpuName : result.GpuName;
-        Field("Završen", result.FinishedAt.ToLocalTime().ToString("g"), separated: false);
-        Field("Trajanje", $"{(int)elapsed.TotalHours:00}:{elapsed.Minutes:00}:{elapsed.Seconds:00}", separated: false);
-        Field("Opterećeni uređaji", devices ?? "—");
-        Field("Razlog završetka", result.Reason);
-        Field("Najviša CPU temperatura", Peak(result.CpuPeak));
-        Field("Najtoplija jezgra", Peak(result.CorePeak));
-        if (result.GpuName != null) Field("Najviša GPU temperatura", Peak(result.GpuPeak));
-        if (result.PackageMonitored) Field("CPU paket · nadzor iGPU-a", Peak(result.PackagePeak, includeSensor: false));
+        foreach (var field in TestReport.Fields(results[chooser.SelectedIndex]))
+            Field(field.Label, field.Value);
         summary.SelectionStart = 0;
         summary.ScrollToCaret();
 
@@ -101,9 +186,6 @@ internal sealed class TelemetryPanel : TableLayoutPanel
             summary.AppendText(value + (separated ? "\n\n" : "\n"));
         }
     }
-
-    private static string Peak(ThermalPeak? value, bool includeSensor = true) => value == null ? "—" :
-        $"{value.Celsius:F1} °C" + (includeSensor ? " · " + value.Sensor : "");
 
     protected override void Dispose(bool disposing)
     {

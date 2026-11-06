@@ -13,6 +13,7 @@ public sealed class MainForm : Form
     private readonly CancellationTokenSource closing = new();
     private readonly Label cpuTemp = Metric(), cpuLoad = Small(), cpuName = Small(), gpuTemp = Metric(), gpuLoad = Small(), status = Small(), timerValue = Metric(), sensorNote = Small();
     private readonly Label cpuProtection = Small(), gpuProtection = Small();
+    private readonly Label cpuMetrics = Small(), gpuMetrics = Small();
     private readonly Button cpuButton = Button("Pokreni CPU"), gpuButton = Button("Pokreni GPU"), stopButton = Button("Zaustavi sve"), updateButton = Button("Provjeri nadogradnje");
     private readonly Button specStopButton = Button("Zaustavi sve");
     private readonly TelemetryPanel telemetry = new(Ground, Surface, Raised, Ink, Muted);
@@ -127,16 +128,25 @@ public sealed class MainForm : Form
         var body = new Panel { Dock = DockStyle.Fill, Margin = Padding.Empty };
         var monitoring = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 4, Margin = Padding.Empty };
         monitoring.ColumnStyles.Add(new(SizeType.Percent, 100));
-        monitoring.RowStyles.Add(new(SizeType.Absolute, 218));
-        monitoring.RowStyles.Add(new(SizeType.Absolute, 142));
+        monitoring.RowStyles.Add(new(SizeType.Absolute, 240));
+        monitoring.RowStyles.Add(new(SizeType.Absolute, 146));
         monitoring.RowStyles.Add(new(SizeType.Percent, 100));
-        monitoring.RowStyles.Add(new(SizeType.Absolute, 54));
+        monitoring.RowStyles.Add(new(SizeType.Absolute, 44));
         var specifications = new SpecificationsPanel(Ground, Surface, Raised, Ink, Muted, closing.Token)
         {
             Visible = false, Padding = new(0, 10, 0, 8)
         };
         telemetry.Visible = false;
         telemetry.SetResults(testHistory);
+        telemetry.ExportRequested += async results =>
+        {
+            var sections = await specifications.GetReportSectionsAsync(closing.Token);
+            if (closing.IsCancellationRequested || IsDisposed) return;
+            using var dialog = new ReportDialog(results, sections, specifications.ReadAt,
+                Ground, Surface, Raised, Ink, Muted);
+            dialog.Icon = Icon;
+            dialog.ShowDialog(this);
+        };
         body.Controls.Add(telemetry);
         body.Controls.Add(specifications);
         body.Controls.Add(monitoring);
@@ -144,11 +154,13 @@ public sealed class MainForm : Form
         var devices = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Margin = new(0, 10, 0, 14) };
         devices.ColumnStyles.Add(new(SizeType.Percent, 50)); devices.ColumnStyles.Add(new(SizeType.Percent, 50));
         cpuProtection.Text = "Zaštita: najtoplija jezgra ili CPU paket";
-        devices.Controls.Add(DevicePanel("CPU", cpuName, cpuTemp, cpuLoad, cpuButton, null, cpuProtection), 0, 0);
-        devices.Controls.Add(DevicePanel("GPU", null, gpuTemp, gpuLoad, gpuButton, adapterSelect, gpuProtection), 1, 0); monitoring.Controls.Add(devices, 0, 0);
+        devices.Controls.Add(DevicePanel("CPU", cpuName, cpuTemp, cpuLoad, cpuButton, null, cpuProtection, cpuMetrics), 0, 0);
+        devices.Controls.Add(DevicePanel("GPU", null, gpuTemp, gpuLoad, gpuButton, adapterSelect, gpuProtection, gpuMetrics), 1, 0); monitoring.Controls.Add(devices, 0, 0);
+        tips.SetToolTip(cpuMetrics, "Najviši trenutačni takt među dostupnim senzorima pojedinačnih CPU jezgri i snaga cijelog CPU paketa. Očitava se jednom u sekundi; takt nije prosjek ni efektivni takt.");
+        tips.SetToolTip(gpuMetrics, "Takt GPU jezgre i dostupni senzor snage odabrane grafike. Nedostajući senzor označen je crticom; snaga CPU paketa ne zamjenjuje GPU snagu.");
         var controls = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, BackColor = Surface, Padding = new(18, 10, 18, 10), Margin = new(0, 0, 0, 14) };
         controls.ColumnStyles.Add(new(SizeType.Percent, 40)); controls.ColumnStyles.Add(new(SizeType.Percent, 31)); controls.ColumnStyles.Add(new(SizeType.Percent, 29));
-        var timerPanel = Stack(); timerPanel.Controls.Add(Title("Zajednički timer")); duration.Width = 245; timerPanel.Controls.Add(duration); timerPanel.Controls.Add(timerValue); controls.Controls.Add(timerPanel, 0, 0);
+        var timerPanel = Stack(); timerPanel.Controls.Add(Title("Zajednički timer")); duration.Width = 245; timerPanel.Controls.Add(duration); timerValue.Font = new("Consolas", 20); timerPanel.Controls.Add(timerValue); controls.Controls.Add(timerPanel, 0, 0);
         var limits = Stack(); limits.Controls.Add(Title("Zaustavi na temperaturi"));
         var cpuRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new(0, 5, 0, 0) }; cpuRow.Controls.Add(new Label { Text = "CPU", Width = 45, Padding = new(0, 5, 0, 0) }); cpuRow.Controls.Add(cpuLimit); cpuRow.Controls.Add(new Label { Text = "°C", AutoSize = true, Padding = new(0, 5, 0, 0) }); limits.Controls.Add(cpuRow);
         var gpuRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new(0, 5, 0, 0) }; gpuRow.Controls.Add(new Label { Text = "GPU", Width = 45, Padding = new(0, 5, 0, 0) }); gpuRow.Controls.Add(gpuLimit); gpuRow.Controls.Add(new Label { Text = "°C", AutoSize = true, Padding = new(0, 5, 0, 0) }); limits.Controls.Add(gpuRow); controls.Controls.Add(limits, 1, 0);
@@ -213,7 +225,7 @@ public sealed class MainForm : Form
     private static Button Button(string text) => new ActionButton { Text = text, Height = 35, Width = 210, FlatStyle = FlatStyle.Flat, BackColor = Raised, ForeColor = Ink, Cursor = Cursors.Hand, Margin = new(0, 0, 0, 0), UseVisualStyleBackColor = false, FlatAppearance = { BorderColor = Line, BorderSize = 1 } };
     private static ComboBox Combo() => new() { DropDownStyle = ComboBoxStyle.DropDownList, FlatStyle = FlatStyle.Flat, BackColor = Raised, ForeColor = Ink, Width = 300, IntegralHeight = true, Margin = new(0, 2, 0, 0) };
     private static NumericUpDown Limit(int min, int max) => new() { Minimum = min, Maximum = max, Width = 65, BackColor = Raised, ForeColor = Ink, BorderStyle = BorderStyle.FixedSingle };
-    private static Control DevicePanel(string title, Label? name, Label temp, Label load, Button button, ComboBox? combo, Label details)
+    private static Control DevicePanel(string title, Label? name, Label temp, Label load, Button button, ComboBox? combo, Label details, Label metrics)
     {
         var p = new TableLayoutPanel { Dock = DockStyle.Fill, BackColor = Surface, ColumnCount = 2, RowCount = 5, Padding = new(18, 10, 18, 10), Margin = title == "CPU" ? new(0, 0, 8, 0) : new(8, 0, 0, 0) };
         p.ColumnStyles.Add(new(SizeType.Percent, 100)); p.ColumnStyles.Add(new(SizeType.Absolute, 166));
@@ -221,7 +233,11 @@ public sealed class MainForm : Form
         p.Controls.Add(Title(title), 0, 0); p.SetColumnSpan(p.GetControlFromPosition(0, 0)!, 2);
         if (combo != null) { combo.Dock = DockStyle.Fill; p.Controls.Add(combo, 0, 1); p.SetColumnSpan(combo, 2); }
         else if (name != null) { name.AutoSize = false; name.Dock = DockStyle.Fill; name.AutoEllipsis = true; p.Controls.Add(name, 0, 1); p.SetColumnSpan(name, 2); }
-        p.Controls.Add(temp, 0, 2); load.Anchor = AnchorStyles.Left | AnchorStyles.Bottom; p.Controls.Add(load, 1, 2);
+        p.Controls.Add(temp, 0, 2);
+        var readings = Stack();
+        readings.Controls.Add(load);
+        readings.Controls.Add(metrics);
+        p.Controls.Add(readings, 1, 2);
         details.Dock = DockStyle.Fill; details.AutoSize = false; p.Controls.Add(details, 0, 3); p.SetColumnSpan(details, 2);
         button.Dock = DockStyle.Fill; p.Controls.Add(button, 0, 4); p.SetColumnSpan(button, 2); return p;
     }
@@ -251,6 +267,8 @@ public sealed class MainForm : Form
         cpuName.Text = cpu?.Name ?? "Otkrivanje CPU-a…";
         cpuTemp.Text = Temperature(fresh ? cpus.Select(c => c.Temperature).DefaultIfEmpty().Max() : null); gpuTemp.Text = Temperature(fresh ? selectedGpu?.Temperature : null);
         cpuLoad.Text = "Opterećenje " + (fresh && cpu?.Load is float cl ? $"{cl:F0}%" : "—"); gpuLoad.Text = "Opterećenje " + (fresh && selectedGpu?.Load is float gl ? $"{gl:F0}%" : "—");
+        cpuMetrics.Text = DeviceMetrics.Text(fresh && cpu != null ? cpu : new("", "", true, []));
+        gpuMetrics.Text = DeviceMetrics.Text(fresh ? selectedGpu : null);
         cpuButton.Text = stress.CpuRunning ? "Zaustavi CPU" : "Pokreni CPU"; gpuButton.Text = stress.GpuRunning ? "Zaustavi GPU" : packageMode ? "Pokreni GPU · nadzor CPU paketa" : "Pokreni GPU";
         cpuButton.Enabled = stress.CpuRunning || (fresh && cpus.Length > 0 && cpus.All(c => c.Hottest.HasValue)); gpuButton.Enabled = stress.GpuRunning || (gpuSource != null && adapterSelect.SelectedItem != null);
         gpuProtection.Text = !fresh ? "Učitavanje temperaturnih senzora…" : packageMode ? $"GPU temperatura nije dostupna.\nNadzor: CPU paket {Temperature(packageTemp)} · prag {settings.GpuLimit} °C" : selectedGpu?.Hottest != null ? "Zaštita: najviša GPU temperatura, uključujući hotspot" : "GPU temperatura nije dostupna.\nTest čeka valjan izvor za temperaturni nadzor.";

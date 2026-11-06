@@ -22,6 +22,11 @@ Pokreni instalacijski EXE. Uključuje aplikaciju, .NET runtime i službeni potpi
 
 Desni klik u praznom dijelu prozora: automatska provjera nadogradnji, mapa postavki/dnevnika i informacije o programu.
 
+Od verzije 1.3.0:
+- Ispod temperatura prikazuju se najviši trenutačni takt dostupne CPU jezgre, takt GPU jezgre i snaga CPU paketa odnosno dostupnog GPU senzora u vatima. Naziv označava mjeri li se GPU paket, kartica ili jezgra. Bez senzora prikazuje se crtica. Takt CPU-a nije prosječni ni efektivni takt, a snaga pojedinih dijelova ne zbraja se s paketom.
+- U izborniku sažetaka odaberi **Usporedi zadnja dva** za usporedni prikaz trajanja, uređaja, razloga završetka i temperatura. Vlastita GPU temperatura i CPU paket za nadzor iGPU-a prikazuju se zasebno. Sažeci nemaju podatke o uvjetima hlađenja i promjenama konfiguracije, pa usporedba nije ocjena performansi.
+- **Izvezi izvještaj…** otvara pregled odabranog sažetka ili oba uspoređena testa i specifikacija računala. Izvještaj se može kopirati ili spremiti u UTF-8 `.txt`. Naziv računala početno je izostavljen; može se uključiti kućicom u pregledu. Specifikacije nose vrijeme očitanja i opisuju trenutačno računalo, a ne povijesnu konfiguraciju pri testu. Postojeći spremljeni sažeci ostaju dostupni nakon nadogradnje.
+
 ## Podrška i ograničenja
 
 Windows 10 2004+ ili Windows 11 x64, Intel/AMD CPU, NVIDIA/AMD/Intel GPU s Direct3D 11. Podrška određenog senzora ovisi o driveru i LibreHardwareMonitoru; ne postoji jamstvo očitanja na svakom modelu. Neki CPU-i ne izlažu temperature svake jezgre. Neke integrirane grafike nemaju zasebnu temperaturu. Nedostajući podaci prikazuju se kao crtica; ne procjenjuju se iz drugih uređaja. Jednako nazvani višestruki GPU-i blokiraju odabir testa kad se senzor ne može jednoznačno povezati.

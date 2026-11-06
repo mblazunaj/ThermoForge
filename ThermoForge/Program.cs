@@ -134,6 +134,38 @@ public static class SelfTest
             Check(packageResult.PackagePeak?.Celsius == 85 && packageResult.GpuPeak == null && packageResult.CorePeak == null &&
                 persisted is { Length: 2 } && persisted[0] == packageResult && persisted[1] == report,
                 "two results round-trip with iGPU package separate from GPU and aggregate core temperatures");
+            var metricCpu = new DeviceReading("cpu", "CPU", true,
+            [new("bus", "Bus Speed", "Clock", 9000, null), new("avg", "Core Average", "Clock", 8000, null),
+             new("c1", "P-Core #1", "Clock", 4800, null), new("c2", "E-Core #2", "Clock", 3200, null),
+             new("effective", "Core #1 (Effective)", "Clock", 9500, null),
+             new("bad", "CPU Core #3", "Clock", float.NaN, null), new("pkg", "CPU Package", "Power", 42.5f, null),
+             new("part", "CPU Cores", "Power", 30, null)]);
+            Check(DeviceMetrics.Clock(metricCpu)?.Value == 4800 && DeviceMetrics.Power(metricCpu)?.Value == 42.5f,
+                "CPU metrics use highest individual core clock and package power without summing subcomponents");
+            var metricGpu = new DeviceReading("gpu", "GPU", false,
+            [new("mem", "GPU Memory", "Clock", 9000, null), new("core", "GPU Core", "Clock", 1500, null),
+             new("percent", "GPU Power", "Load", 90, null), new("bad", "GPU Board Power", "Power", float.PositiveInfinity, null),
+             new("pkg", "GPU Package", "Power", 65, null)]);
+            Check(DeviceMetrics.Clock(metricGpu)?.Value == 1500 && DeviceMetrics.Power(metricGpu)?.Value == 65,
+                "GPU metrics exclude memory clocks, percentage power and nonfinite readings");
+            Check(DeviceMetrics.Power(metricGpu with { Sensors = [new("zero", "GPU Power", "Power", 0, null)] })?.Value == 0 &&
+                DeviceMetrics.Power(metricCpu with { Sensors = [new("partial", "CPU Cores", "Power", 20, null)] }) == null &&
+                DeviceMetrics.Clock(metricGpu with { Sensors = [] }) == null,
+                "zero watts is valid and unavailable full-device metrics remain missing");
+            SpecSection[] reportSpecs = [new("Pregled", [new("Računalo", new SpecField("Naziv računala", "PRIVATE-PC-TEST"),
+                new SpecField("Procesor", "Fixture CPU"), new SpecField("Nepoznato", null))]) { Incomplete = true }];
+            string privateReport = TestReport.Build([packageResult, report], reportSpecs, DateTimeOffset.Now, false);
+            Check(!privateReport.Contains("PRIVATE-PC-TEST") && privateReport.Contains("Fixture CPU") && privateReport.Contains("dio podataka") &&
+                privateReport.Contains("ZADNJI TEST") && privateReport.Contains("PRETHODNI TEST"),
+                "export omits the computer name by default while preserving both results and incomplete specs");
+            Check(TestReport.Build([report], reportSpecs, DateTimeOffset.Now, true).Contains("PRIVATE-PC-TEST") &&
+                TestReport.Build([report], [], DateTimeOffset.Now, false).Contains("Specifikacije nisu dostupne"),
+                "export allows an explicit computer name and handles missing specifications");
+            var packageFields = TestReport.Fields(packageResult);
+            Check(packageFields.Single(f => f.Label == "Najviša GPU temperatura").Value == "—" &&
+                packageFields.Single(f => f.Label == "CPU paket · nadzor iGPU-a").Value.Contains("85") &&
+                TestReport.Fields(report with { Duration = TimeSpan.FromHours(25) })[1].Value == "25:00:00",
+                "shared report and comparison fields keep package and GPU separate and format long durations");
             Check(GpuThermals.Resolve(Intel(), intelId) is { UsesCpuPackage: true, Temperature: 50 }, "integrated Intel uses actual package value");
             Check(GpuThermals.Resolve(Intel(50, 70), intelId) is { UsesCpuPackage: false, Temperature: 70 }, "own GPU sensor preferred over package");
             Check(Protection.Check(Intel(), now, false, intelId, 95, 85) != null, "package fallback must be explicitly selected");

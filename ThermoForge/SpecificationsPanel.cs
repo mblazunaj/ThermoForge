@@ -10,7 +10,8 @@ internal sealed class SpecificationsPanel : TableLayoutPanel
     private readonly DataGridView fields = new();
     private readonly Font groupFont = new("Segoe UI Semibold", 10);
     private SpecSection[]? sections;
-    private bool loading;
+    private Task? loadingTask;
+    internal DateTimeOffset ReadAt { get; private set; }
 
     internal SpecificationsPanel(Color ground, Color surface, Color raised, Color ink, Color muted, CancellationToken token)
     {
@@ -144,16 +145,32 @@ internal sealed class SpecificationsPanel : TableLayoutPanel
         e.DrawFocusRectangle();
     }
 
-    internal async Task LoadAsync(CancellationToken token, bool refresh = false)
+    internal Task LoadAsync(CancellationToken token, bool refresh = false)
     {
-        if (loading || (sections != null && !refresh)) return;
-        loading = true;
+        if (loadingTask != null) return loadingTask;
+        if (sections != null && !refresh) return Task.CompletedTask;
+        return loadingTask = LoadCoreAsync(token);
+    }
+
+    internal async Task<SpecSection[]> GetReportSectionsAsync(CancellationToken token)
+    {
+        await LoadAsync(token);
+        token.ThrowIfCancellationRequested();
+        return sections ?? [];
+    }
+
+    private async Task LoadCoreAsync(CancellationToken token)
+    {
         reload.Enabled = false;
         status.Text = "Učitavanje specifikacija…";
         try
         {
             var result = await Task.Run(() => ComputerSpecs.Read(token), token);
-            if (!token.IsCancellationRequested && !IsDisposed) SetSections(result);
+            if (!token.IsCancellationRequested && !IsDisposed)
+            {
+                ReadAt = DateTimeOffset.Now;
+                SetSections(result);
+            }
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { }
         catch (Exception e)
@@ -163,7 +180,7 @@ internal sealed class SpecificationsPanel : TableLayoutPanel
         }
         finally
         {
-            loading = false;
+            loadingTask = null;
             if (!IsDisposed) reload.Enabled = true;
         }
     }
